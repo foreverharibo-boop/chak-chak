@@ -217,7 +217,7 @@
 }
 
 /* ── Mobile — 패널 중앙 고정 ── */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
     #chak-panel {
         position: fixed !important;
         top: 50% !important;

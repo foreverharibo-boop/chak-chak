@@ -263,11 +263,16 @@ function openPanel() {
 
     // Position panel near FAB
     const fabRect = fabEl.getBoundingClientRect();
-    const isMobile = window.innerWidth <= 768;
+    const isMobile = window.innerWidth <= 1024;
 
-    if (!isMobile) {
+    if (isMobile) {
+        // Clear any inline positioning — let CSS media query handle it
+        panelEl.style.removeProperty('bottom');
+        panelEl.style.removeProperty('left');
+        panelEl.style.removeProperty('right');
+        panelEl.style.removeProperty('top');
+    } else {
         panelEl.style.bottom = (window.innerHeight - fabRect.top + 4) + 'px';
-        // Align to left side of FAB
         const leftPos = fabRect.left;
         if (leftPos + 240 > window.innerWidth) {
             panelEl.style.left = 'auto';
