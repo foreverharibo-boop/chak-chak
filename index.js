@@ -118,11 +118,12 @@ function showToast(name) {
 }
 
 // ── Favorites & Folders ──
-function isFolderOpen(name) { return getSettings().folderOpenState?.[name] !== false; }
+function isFolderOpen(name) {
+    const state = getSettings().folderOpenState;
+    return state[name] === undefined ? true : state[name];
+}
 function setFolderOpen(name, open) {
-    const s = getSettings();
-    if (!s.folderOpenState) s.folderOpenState = {};
-    s.folderOpenState[name] = open;
+    getSettings().folderOpenState[name] = open;
     saveSettings();
 }
 
