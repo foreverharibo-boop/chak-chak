@@ -52,6 +52,14 @@
     transform-origin: bottom left;
 }
 
+#chak-panel, #chak-panel * {
+    text-shadow: none !important;
+}
+
+.chak-toast {
+    text-shadow: none !important;
+}
+
 #chak-panel.chak-panel--hidden {
     opacity: 0;
     transform: scale(0.95);

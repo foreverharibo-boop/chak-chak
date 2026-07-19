@@ -29,27 +29,37 @@ function getSTColor(varName, fallback) {
     return val || fallback;
 }
 
-function forceOpaque(cssColor) {
-    // Parse rgba/hsla and force alpha to 1
-    const el = document.createElement('span');
-    el.style.color = cssColor;
-    document.body.appendChild(el);
-    const computed = getComputedStyle(el).color;
-    el.remove();
-    // computed is always rgb(r,g,b) or rgba(r,g,b,a)
-    const match = computed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-    if (match) {
-        return `rgb(${match[1]}, ${match[2]}, ${match[3]})`;
+function getRenderedColor(selector, prop, fallback) {
+    // Read the ACTUAL rendered color from a real ST element
+    const el = document.querySelector(selector);
+    if (el) {
+        const val = getComputedStyle(el)[prop];
+        if (val && val !== 'rgba(0, 0, 0, 0)' && val !== 'transparent') {
+            return val;
+        }
     }
-    return cssColor;
+    return fallback;
 }
 
 function applyThemeToPanel() {
     if (!panelEl) return;
-    const bg = forceOpaque(getSTColor('--SmartThemeBlurTintColor', '#2a2a3e'));
-    const textColor = forceOpaque(getSTColor('--SmartThemeBodyColor', '#ccc'));
-    const borderColor = forceOpaque(getSTColor('--SmartThemeBorderColor', '#555'));
-    const quoteColor = forceOpaque(getSTColor('--SmartThemeQuoteColor', '#5e8ad4'));
+
+    // Read actual colors from real ST elements
+    // Background: from a chat message block or main container
+    const bg = getRenderedColor('#chat', 'backgroundColor', null)
+        || getRenderedColor('#sheld', 'backgroundColor', null)
+        || getRenderedColor('body', 'backgroundColor', '#f5f0f0');
+
+    // Text: from actual visible text in ST
+    const textColor = getRenderedColor('.mes_text', 'color', null)
+        || getRenderedColor('#chat', 'color', null)
+        || getRenderedColor('body', 'color', '#333');
+
+    // Border
+    const borderColor = getSTColor('--SmartThemeBorderColor', '#ccc');
+
+    // Accent
+    const quoteColor = getSTColor('--SmartThemeQuoteColor', '#5e8ad4');
 
     panelEl.style.setProperty('--chak-bg', bg);
     panelEl.style.setProperty('--chak-text', textColor);
@@ -58,9 +68,12 @@ function applyThemeToPanel() {
 }
 
 function applyThemeToToast(toast) {
-    const bg = forceOpaque(getSTColor('--SmartThemeBlurTintColor', '#2a2a3e'));
-    const textColor = forceOpaque(getSTColor('--SmartThemeBodyColor', '#ccc'));
-    const borderColor = forceOpaque(getSTColor('--SmartThemeBorderColor', '#555'));
+    const bg = getRenderedColor('#chat', 'backgroundColor', null)
+        || getRenderedColor('body', 'backgroundColor', '#f5f0f0');
+    const textColor = getRenderedColor('.mes_text', 'color', null)
+        || getRenderedColor('body', 'color', '#333');
+    const borderColor = getSTColor('--SmartThemeBorderColor', '#ccc');
+
     toast.style.setProperty('--chak-bg', bg);
     toast.style.setProperty('--chak-text', textColor);
     toast.style.setProperty('--chak-border', borderColor);
