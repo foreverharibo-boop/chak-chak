@@ -161,52 +161,6 @@ function buildUI() {
         }
     });
 
-    // Position FAB relative to send button
-    positionFab();
-    window.addEventListener('resize', positionFab);
-    new ResizeObserver(positionFab).observe(document.body);
-}
-
-function positionFab() {
-    // Try to find ST's send button or input area
-    const sendBtn = document.getElementById('send_but') || document.getElementById('send_button');
-    const inputArea = document.getElementById('send_textarea');
-    const formArea = document.getElementById('form_sheld');
-
-    let anchor = sendBtn || inputArea || formArea;
-
-    if (anchor) {
-        const rect = anchor.getBoundingClientRect();
-        if (sendBtn) {
-            // Place just above the send button, aligned to its right edge
-            fabEl.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
-            fabEl.style.right = (window.innerWidth - rect.right) + 'px';
-        } else {
-            // Place above the input area, right side
-            fabEl.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
-            fabEl.style.right = '16px';
-        }
-    } else {
-        // Fallback
-        fabEl.style.bottom = '50px';
-        fabEl.style.right = '16px';
-    }
-
-    // Position panel above FAB
-    if (!panelEl.classList.contains('chak-panel--hidden')) {
-        positionPanel();
-    }
-}
-
-function positionPanel() {
-    const isMobile = window.innerWidth <= 768;
-    if (isMobile) {
-        // CSS handles mobile centering
-        return;
-    }
-    const fabRect = fabEl.getBoundingClientRect();
-    panelEl.style.bottom = (window.innerHeight - fabRect.top + 8) + 'px';
-    panelEl.style.right = (window.innerWidth - fabRect.right) + 'px';
 }
 
 function togglePanel() {
@@ -220,7 +174,6 @@ function togglePanel() {
 function openPanel() {
     renderPresetList();
     updateCurrentLabel();
-    positionPanel();
     panelEl.classList.remove('chak-panel--hidden');
     fabEl.classList.add('chak-fab--active');
 }

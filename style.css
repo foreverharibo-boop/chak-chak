@@ -1,8 +1,10 @@
 /* 착착 (Chak-Chak) — Quick Preset Switcher */
 
-/* ── FAB — 입력창 근처 작은 버튼 ── */
+/* ── FAB — 고정 위치 (입력창 위 우측) ── */
 #chak-fab {
     position: fixed;
+    bottom: 45px;
+    right: 100px;
     z-index: 99999;
     width: 26px;
     height: 26px;
@@ -39,6 +41,8 @@
 /* ── Panel ── */
 #chak-panel {
     position: fixed;
+    bottom: 80px;
+    right: 60px;
     z-index: 99998;
     width: 240px;
     max-height: 400px;
