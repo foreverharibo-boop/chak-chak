@@ -249,9 +249,7 @@ function createItem(preset, t, isFav, folder) {
         fb.textContent = '📁'; fb.title = '폴더에 추가';
         fb.addEventListener('click', (e) => {
             e.stopPropagation();
-            const names = Object.keys(getFolders());
-            const c = prompt(`폴더 선택:\n${names.join(', ')}`);
-            if (c && names.includes(c.trim())) { addToFolder(c.trim(), preset.value); renderPresetList(); }
+            showFolderPicker(fb, preset.value, t);
         });
         acts.appendChild(fb);
     }
@@ -265,6 +263,45 @@ function createItem(preset, t, isFav, folder) {
     item.appendChild(nm); item.appendChild(acts);
     item.addEventListener('click', () => switchPreset(preset.value));
     return item;
+}
+
+function showFolderPicker(anchorEl, presetValue, t) {
+    // Remove any existing picker
+    document.querySelector('.chak-folder-picker')?.remove();
+
+    const picker = document.createElement('div');
+    picker.className = 'chak-folder-picker';
+    picker.style.backgroundColor = t.bg;
+    picker.style.borderColor = t.border;
+    picker.style.color = t.text;
+
+    const names = Object.keys(getFolders());
+    names.forEach(name => {
+        const opt = document.createElement('div');
+        opt.className = 'chak-folder-picker-item';
+        opt.textContent = `📁 ${name}`;
+        opt.style.color = t.text;
+        opt.addEventListener('click', (e) => {
+            e.stopPropagation();
+            addToFolder(name, presetValue);
+            picker.remove();
+            renderPresetList();
+        });
+        picker.appendChild(opt);
+    });
+
+    // Position near anchor
+    panelEl.appendChild(picker);
+    const panelRect = panelEl.getBoundingClientRect();
+    const anchorRect = anchorEl.getBoundingClientRect();
+    picker.style.top = (anchorRect.top - panelRect.top - picker.offsetHeight) + 'px';
+    picker.style.right = '8px';
+
+    // Close on outside click
+    const closePicker = (e) => {
+        if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', closePicker, true); }
+    };
+    setTimeout(() => document.addEventListener('click', closePicker, true), 0);
 }
 
 // ── Settings ──

@@ -78,6 +78,27 @@
 .chak-item-folder-btn { font-size: 11px; cursor: pointer; padding: 2px; opacity: 0.5; }
 .chak-item-folder-btn:hover { opacity: 1; }
 
+/* 폴더 선택 팝업 */
+.chak-folder-picker {
+    position: absolute;
+    right: 8px;
+    z-index: 10;
+    min-width: 140px;
+    border-radius: 8px;
+    border: 1px solid;
+    padding: 4px;
+    text-shadow: none !important;
+}
+.chak-folder-picker-item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.1s;
+}
+.chak-folder-picker-item:hover { background: rgba(128,128,128,0.15); }
+.chak-folder-picker-item:active { background: rgba(128,128,128,0.25); }
+
 .chak-toast {
     position: fixed; bottom: 80px; left: 50%;
     transform: translateX(-50%) translateY(8px);
