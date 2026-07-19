@@ -99,6 +99,11 @@ function switchPreset(value) {
     const s = getPresetSelector(); if (!s) return;
     s.value = value;
     s.dispatchEvent(new Event('change', { bubbles: true }));
+    // 연결 프로필 자동 저장
+    setTimeout(() => {
+        const saveBtn = document.getElementById('update_connection_profile');
+        if (saveBtn) saveBtn.click();
+    }, 300);
     renderPresetList(); updateCurrentLabel();
     showToast(s.options[s.selectedIndex]?.text ?? value);
 }
