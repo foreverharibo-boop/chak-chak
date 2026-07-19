@@ -1,6 +1,6 @@
 /* 착착 (Chak-Chak) — Quick Preset Switcher */
 
-/* ── FAB — ST 입력창 버튼 줄에 삽입 ── */
+/* ── FAB — ST 입력창에 삽입되는 인라인 버튼 ── */
 #chak-fab {
     display: inline-flex;
     align-items: center;
@@ -26,7 +26,7 @@
 }
 
 #chak-fab.chak-fab--active {
-    background-color: var(--SmartThemeQuoteColor, #5e8ad4);
+    background-color: var(--chak-accent, var(--SmartThemeQuoteColor, #5e8ad4));
     border-radius: 50%;
 }
 
@@ -36,22 +36,20 @@
     pointer-events: none;
 }
 
-/* ── Panel ── */
+/* ── Panel — 색상은 JS가 --chak-* 변수로 주입 ── */
 #chak-panel {
     position: fixed;
-    bottom: 80px;
-    right: 16px;
     z-index: 99998;
     width: 240px;
     max-height: 400px;
     border-radius: 10px;
-    background-color: var(--SmartThemeChatMesColorBlock, #fff);
-    border: 1px solid var(--SmartThemeBorderColor, #ccc);
+    background-color: var(--chak-bg);
+    border: 1px solid var(--chak-border);
     display: flex;
     flex-direction: column;
     overflow: hidden;
     transition: opacity 0.15s, transform 0.15s;
-    transform-origin: bottom right;
+    transform-origin: bottom left;
 }
 
 #chak-panel.chak-panel--hidden {
@@ -72,12 +70,12 @@
 .chak-panel-title {
     font-size: 13px;
     font-weight: 700;
-    color: var(--SmartThemeBodyColor, #222);
+    color: var(--chak-text);
 }
 
 .chak-panel-close {
     cursor: pointer;
-    color: var(--SmartThemeBodyColor, #222);
+    color: var(--chak-text);
     font-size: 14px;
     padding: 2px 4px;
 }
@@ -86,18 +84,18 @@
 .chak-current {
     padding: 2px 12px 8px;
     font-size: 12px;
-    color: var(--SmartThemeBodyColor, #222);
+    color: var(--chak-text);
 }
 
 .chak-current-name {
-    color: var(--SmartThemeQuoteColor, #5e8ad4);
+    color: var(--chak-accent);
     font-weight: 600;
 }
 
 /* ── Divider ── */
 .chak-divider {
     height: 1px;
-    background: var(--SmartThemeBorderColor, #ddd);
+    background: var(--chak-border);
     margin: 0 10px;
     flex-shrink: 0;
 }
@@ -113,19 +111,14 @@
 .chak-section-label {
     font-size: 11px;
     font-weight: 600;
-    color: var(--SmartThemeBodyColor, #222);
+    color: var(--chak-text);
     padding: 6px 6px 3px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
-/* 즐겨찾기 비어있으면 섹션 숨기기 */
 .chak-list--favorites:empty {
     display: none;
-}
-
-.chak-list--favorites:empty + .chak-section-label {
-    margin-top: 0;
 }
 
 /* ── Preset Items ── */
@@ -154,13 +147,13 @@
 }
 
 .chak-item--active .chak-item-name {
-    color: var(--SmartThemeQuoteColor, #5e8ad4);
+    color: var(--chak-accent);
     font-weight: 600;
 }
 
 .chak-item-name {
     font-size: 13px;
-    color: var(--SmartThemeBodyColor, #222);
+    color: var(--chak-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -170,7 +163,7 @@
 
 .chak-item-star {
     font-size: 14px;
-    color: var(--SmartThemeBodyColor, #222);
+    color: var(--chak-text);
     cursor: pointer;
     flex-shrink: 0;
     padding: 2px;
@@ -189,9 +182,9 @@
     z-index: 100000;
     padding: 6px 16px;
     border-radius: 16px;
-    background-color: var(--SmartThemeChatMesColorBlock, #fff);
-    border: 1px solid var(--SmartThemeBorderColor, #ccc);
-    color: var(--SmartThemeBodyColor, #222);
+    background-color: var(--chak-bg);
+    border: 1px solid var(--chak-border);
+    color: var(--chak-text);
     font-size: 12px;
     font-weight: 600;
     opacity: 0;

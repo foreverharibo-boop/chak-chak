@@ -22,6 +22,35 @@ function saveSettings() {
     context.saveSettingsDebounced();
 }
 
+// ── ST theme color helpers ──
+
+function getSTColor(varName, fallback) {
+    const val = getComputedStyle(document.body).getPropertyValue(varName).trim();
+    return val || fallback;
+}
+
+function applyThemeToPanel() {
+    if (!panelEl) return;
+    const bg = getSTColor('--SmartThemeBlurTintColor', '#2a2a3e');
+    const textColor = getSTColor('--SmartThemeBodyColor', '#ccc');
+    const borderColor = getSTColor('--SmartThemeBorderColor', '#555');
+    const quoteColor = getSTColor('--SmartThemeQuoteColor', '#5e8ad4');
+
+    panelEl.style.setProperty('--chak-bg', bg);
+    panelEl.style.setProperty('--chak-text', textColor);
+    panelEl.style.setProperty('--chak-border', borderColor);
+    panelEl.style.setProperty('--chak-accent', quoteColor);
+}
+
+function applyThemeToToast(toast) {
+    const bg = getSTColor('--SmartThemeBlurTintColor', '#2a2a3e');
+    const textColor = getSTColor('--SmartThemeBodyColor', '#ccc');
+    const borderColor = getSTColor('--SmartThemeBorderColor', '#555');
+    toast.style.setProperty('--chak-bg', bg);
+    toast.style.setProperty('--chak-text', textColor);
+    toast.style.setProperty('--chak-border', borderColor);
+}
+
 // ── Preset selector detection ──
 
 const SELECTOR_MAP = {
@@ -82,6 +111,7 @@ function showToast(presetName) {
     const toast = document.createElement('div');
     toast.className = 'chak-toast';
     toast.textContent = `착! → ${presetName}`;
+    applyThemeToToast(toast);
     document.documentElement.appendChild(toast);
 
     requestAnimationFrame(() => toast.classList.add('chak-toast--visible'));
@@ -115,7 +145,7 @@ let panelEl = null;
 let fabEl = null;
 
 function buildUI() {
-    // FAB — inject into ST's send form area
+    // FAB
     fabEl = document.createElement('div');
     fabEl.id = 'chak-fab';
     fabEl.innerHTML = `<span class="chak-fab-icon">⚡</span>`;
@@ -125,14 +155,13 @@ function buildUI() {
         togglePanel();
     });
 
-    // Try to inject FAB into ST's input toolbar
+    // Try to inject FAB into ST's input toolbar (LEFT side)
     const injected = injectFab();
     if (!injected) {
-        // Fallback: append to <html> with fixed position
         document.documentElement.appendChild(fabEl);
     }
 
-    // Panel — always on <html> to avoid MovingUI
+    // Panel — on <html> to avoid MovingUI, colors applied via JS
     panelEl = document.createElement('div');
     panelEl.id = 'chak-panel';
     panelEl.classList.add('chak-panel--hidden');
@@ -167,11 +196,11 @@ function buildUI() {
 }
 
 function injectFab() {
-    // Try multiple known ST containers for the input area buttons
+    // Try LEFT side containers first, then right, then general
     const targets = [
-        '#rightSendForm',           // Right side of send form
-        '#leftSendForm',            // Left side of send form
-        '#send_form .panelControlBar', // Control bar
+        '#leftSendForm',
+        '#rightSendForm',
+        '#send_form .panelControlBar',
         '#form_sheld .panelControlBar',
         '#send_form',
     ];
@@ -179,7 +208,12 @@ function injectFab() {
     for (const selector of targets) {
         const container = document.querySelector(selector);
         if (container) {
-            container.appendChild(fabEl);
+            // Prepend to left, append to right
+            if (selector === '#leftSendForm') {
+                container.appendChild(fabEl);
+            } else {
+                container.appendChild(fabEl);
+            }
             return true;
         }
     }
@@ -195,12 +229,27 @@ function togglePanel() {
 }
 
 function openPanel() {
+    applyThemeToPanel();
     renderPresetList();
     updateCurrentLabel();
+
     // Position panel near FAB
     const fabRect = fabEl.getBoundingClientRect();
-    panelEl.style.bottom = (window.innerHeight - fabRect.top + 4) + 'px';
-    panelEl.style.right = Math.max(8, window.innerWidth - fabRect.right) + 'px';
+    const isMobile = window.innerWidth <= 768;
+
+    if (!isMobile) {
+        panelEl.style.bottom = (window.innerHeight - fabRect.top + 4) + 'px';
+        // Align to left side of FAB
+        const leftPos = fabRect.left;
+        if (leftPos + 240 > window.innerWidth) {
+            panelEl.style.left = 'auto';
+            panelEl.style.right = '8px';
+        } else {
+            panelEl.style.left = leftPos + 'px';
+            panelEl.style.right = 'auto';
+        }
+    }
+
     panelEl.classList.remove('chak-panel--hidden');
     fabEl.classList.add('chak-fab--active');
 }
@@ -223,7 +272,6 @@ function renderPresetList() {
 
     const favorites = presets.filter(p => settings.favorites.includes(p.value));
 
-    // Favorites section
     if (favorites.length === 0) {
         favContainer.innerHTML = '';
     } else {
@@ -231,7 +279,6 @@ function renderPresetList() {
         favorites.forEach(p => favContainer.appendChild(createPresetItem(p, true)));
     }
 
-    // All presets
     allContainer.innerHTML = '';
     presets.forEach(p => allContainer.appendChild(createPresetItem(p, false)));
 }
@@ -255,7 +302,6 @@ function createPresetItem(preset, isFavSection) {
 
     item.appendChild(nameSpan);
     item.appendChild(starBtn);
-
     item.addEventListener('click', () => switchPreset(preset.value));
 
     return item;
@@ -305,7 +351,6 @@ function updateVisibility() {
     buildUI();
     updateVisibility();
 
-    // Refresh list when API/preset changes
     const observer = new MutationObserver(() => {
         if (panelEl && !panelEl.classList.contains('chak-panel--hidden')) {
             renderPresetList();
