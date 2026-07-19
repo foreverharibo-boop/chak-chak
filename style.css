@@ -1,6 +1,6 @@
 /* 착착 (Chak-Chak) — Quick Preset Switcher */
 
-/* ── FAB — ST 입력창에 삽입되는 인라인 버튼 ── */
+/* ── FAB ── */
 #chak-fab {
     display: inline-flex;
     align-items: center;
@@ -16,54 +16,44 @@
     user-select: none;
     vertical-align: middle;
 }
+#chak-fab:hover { transform: scale(1.15); }
+#chak-fab:active { transform: scale(0.92); }
+.chak-fab-icon { font-size: 16px; line-height: 1; pointer-events: none; }
 
-#chak-fab:hover {
-    transform: scale(1.15);
+/* ── Backdrop — 항상 flexbox 중앙 정렬 ── */
+#chak-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 99998;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.25);
+    transition: opacity 0.15s;
 }
-
-#chak-fab:active {
-    transform: scale(0.92);
-}
-
-#chak-fab.chak-fab--active {
-    background-color: var(--chak-accent, var(--SmartThemeQuoteColor, #5e8ad4));
-    border-radius: 50%;
-}
-
-.chak-fab-icon {
-    font-size: 16px;
-    line-height: 1;
+#chak-backdrop.chak-backdrop--hidden {
+    opacity: 0;
     pointer-events: none;
 }
 
-/* ── Panel — 색상은 JS가 --chak-* 변수로 주입 ── */
+/* ── Panel ── */
 #chak-panel {
-    position: fixed;
-    z-index: 99998;
-    width: 240px;
-    max-height: 400px;
-    border-radius: 10px;
-    background-color: var(--chak-bg);
-    border: 1px solid var(--chak-border);
+    width: 280px;
+    max-height: 70vh;
+    border-radius: 12px;
+    border: 1px solid;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    transition: opacity 0.15s, transform 0.15s;
-    transform-origin: bottom left;
+    transition: transform 0.15s;
+}
+#chak-backdrop.chak-backdrop--hidden #chak-panel {
+    transform: scale(0.95);
 }
 
+/* 글씨 그림자 제거 */
 #chak-panel, #chak-panel * {
     text-shadow: none !important;
-}
-
-.chak-toast {
-    text-shadow: none !important;
-}
-
-#chak-panel.chak-panel--hidden {
-    opacity: 0;
-    transform: scale(0.95);
-    pointer-events: none;
 }
 
 /* ── Panel Header ── */
@@ -74,39 +64,17 @@
     padding: 10px 12px 6px;
     flex-shrink: 0;
 }
-
-.chak-panel-title {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--chak-text);
-}
-
-.chak-panel-close {
-    cursor: pointer;
-    color: var(--chak-text);
-    font-size: 14px;
-    padding: 2px 4px;
-}
+.chak-panel-title { font-size: 13px; font-weight: 700; }
+.chak-header-actions { display: flex; align-items: center; gap: 10px; }
+.chak-panel-close { cursor: pointer; font-size: 14px; padding: 2px 4px; }
+.chak-folder-add { cursor: pointer; font-size: 12px; padding: 2px 4px; }
 
 /* ── Current Preset ── */
-.chak-current {
-    padding: 2px 12px 8px;
-    font-size: 12px;
-    color: var(--chak-text);
-}
-
-.chak-current-name {
-    color: var(--chak-accent);
-    font-weight: 600;
-}
+.chak-current { padding: 2px 12px 8px; font-size: 12px; }
+.chak-current-name { font-weight: 600; }
 
 /* ── Divider ── */
-.chak-divider {
-    height: 1px;
-    background: var(--chak-border);
-    margin: 0 10px;
-    flex-shrink: 0;
-}
+.chak-divider { height: 1px; margin: 0 10px; flex-shrink: 0; }
 
 /* ── List Section ── */
 .chak-list-section {
@@ -115,19 +83,36 @@
     padding: 4px 6px 8px;
     scrollbar-width: thin;
 }
-
 .chak-section-label {
     font-size: 11px;
     font-weight: 600;
-    color: var(--chak-text);
     padding: 6px 6px 3px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
-.chak-list--favorites:empty {
-    display: none;
+/* ── Folders ── */
+.chak-folder { margin-bottom: 4px; }
+.chak-folder-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    cursor: pointer;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
 }
+.chak-folder-header:hover { background: rgba(128,128,128,0.1); }
+.chak-folder-name { flex: 1; }
+.chak-folder-del {
+    font-size: 11px;
+    opacity: 0.4;
+    cursor: pointer;
+    padding: 0 4px;
+}
+.chak-folder-del:hover { opacity: 1; }
+.chak-folder-content { padding-left: 12px; }
 
 /* ── Preset Items ── */
 .chak-item {
@@ -141,45 +126,24 @@
     transition: background 0.12s;
     gap: 6px;
 }
-
-.chak-item:hover {
-    background: rgba(128, 128, 128, 0.15);
-}
-
-.chak-item:active {
-    background: rgba(128, 128, 128, 0.25);
-}
-
-.chak-item--active {
-    background: rgba(128, 128, 128, 0.12);
-}
-
-.chak-item--active .chak-item-name {
-    color: var(--chak-accent);
-    font-weight: 600;
-}
+.chak-item:hover { background: rgba(128,128,128,0.12); }
+.chak-item:active { background: rgba(128,128,128,0.2); }
+.chak-item--active { background: rgba(128,128,128,0.1); }
+.chak-item--active .chak-item-name { font-weight: 600; }
 
 .chak-item-name {
     font-size: 13px;
-    color: var(--chak-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     flex: 1;
     min-width: 0;
 }
-
-.chak-item-star {
-    font-size: 14px;
-    color: var(--chak-text);
-    cursor: pointer;
-    flex-shrink: 0;
-    padding: 2px;
-}
-
-.chak-item-star--on {
-    color: #f0c040;
-}
+.chak-item-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.chak-item-star { font-size: 14px; cursor: pointer; padding: 2px; }
+.chak-item-star--on { color: #f0c040 !important; }
+.chak-item-folder-btn { font-size: 11px; cursor: pointer; padding: 2px; opacity: 0.5; }
+.chak-item-folder-btn:hover { opacity: 1; }
 
 /* ── Toast ── */
 .chak-toast {
@@ -190,50 +154,20 @@
     z-index: 100000;
     padding: 6px 16px;
     border-radius: 16px;
-    background-color: var(--chak-bg);
-    border: 1px solid var(--chak-border);
-    color: var(--chak-text);
+    border: 1px solid;
     font-size: 12px;
     font-weight: 600;
     opacity: 0;
     transition: opacity 0.2s, transform 0.2s;
     pointer-events: none;
     white-space: nowrap;
+    text-shadow: none !important;
 }
-
 .chak-toast--visible {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
 }
 
-/* ── Settings panel ── */
-.chak-settings .checkbox_label {
-    margin: 8px 0;
-}
-
-.chak-settings-desc {
-    font-size: 12px;
-    margin: 4px 0 8px;
-}
-
-/* ── Mobile — 패널 중앙 고정 ── */
-@media (max-width: 1024px) {
-    #chak-panel {
-        position: fixed !important;
-        top: 50% !important;
-        left: 50% !important;
-        right: auto !important;
-        bottom: auto !important;
-        transform: translate(-50%, -50%) !important;
-        transform-origin: center center !important;
-        width: calc(100vw - 40px) !important;
-        max-width: 320px !important;
-        max-height: 60vh !important;
-    }
-
-    #chak-panel.chak-panel--hidden {
-        opacity: 0 !important;
-        transform: translate(-50%, -50%) scale(0.95) !important;
-        pointer-events: none !important;
-    }
-}
+/* ── Settings ── */
+.chak-settings .checkbox_label { margin: 8px 0; }
+.chak-settings-desc { font-size: 12px; margin: 4px 0 8px; }
