@@ -64,6 +64,9 @@
 .chak-folder-name { flex: 1; }
 .chak-folder-del { font-size: 11px; opacity: 0.4; cursor: pointer; padding: 0 4px; }
 .chak-folder-del:hover { opacity: 1; }
+.chak-folder-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.chak-folder-rename { font-size: 11px; opacity: 0.4; cursor: pointer; padding: 0 2px; }
+.chak-folder-rename:hover { opacity: 1; }
 .chak-folder-content { padding-left: 12px; }
 
 .chak-item { display: flex; align-items: center; justify-content: space-between; padding: 7px 8px; margin: 1px 0; border-radius: 6px; cursor: pointer; transition: background 0.12s; gap: 6px; }
@@ -78,12 +81,14 @@
 .chak-item-folder-btn { font-size: 11px; cursor: pointer; padding: 2px; opacity: 0.5; }
 .chak-item-folder-btn:hover { opacity: 1; }
 
-/* 폴더 선택 팝업 */
+/* 폴더 선택 팝업 — 패널 중앙 */
 .chak-folder-picker {
     position: absolute;
-    right: 8px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     z-index: 10;
-    min-width: 140px;
+    min-width: 160px;
     border-radius: 8px;
     border: 1px solid;
     padding: 4px;

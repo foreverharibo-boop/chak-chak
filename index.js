@@ -126,6 +126,13 @@ function toggleFavorite(v) {
 function getFolders() { return getSettings().folders; }
 function addFolder(name) { const s = getSettings(); if (!s.folders[name]) { s.folders[name] = []; saveSettings(); } }
 function removeFolder(name) { delete getSettings().folders[name]; saveSettings(); }
+function renameFolder(oldName, newName) {
+    const s = getSettings();
+    if (s.folders[newName]) return; // 이미 존재하면 무시
+    s.folders[newName] = s.folders[oldName] || [];
+    delete s.folders[oldName];
+    saveSettings();
+}
 function addToFolder(f, v) { const s = getSettings(); if (!s.folders[f]) s.folders[f] = []; if (!s.folders[f].includes(v)) { s.folders[f].push(v); saveSettings(); } }
 function removeFromFolder(f, v) { const s = getSettings(); if (s.folders[f]) { s.folders[f] = s.folders[f].filter(x => x !== v); saveSettings(); } }
 
@@ -207,13 +214,18 @@ function renderPresetList() {
     for (const [fname, members] of Object.entries(getFolders())) {
         const fe = document.createElement('div'); fe.className = 'chak-folder';
         const hd = document.createElement('div'); hd.className = 'chak-folder-header'; hd.style.color = t.text;
-        hd.innerHTML = `<span class="chak-folder-name">📁 ${fname}</span><span class="chak-folder-del" title="폴더 삭제">✕</span>`;
+        hd.innerHTML = `<span class="chak-folder-name">📁 ${fname}</span><span class="chak-folder-actions"><span class="chak-folder-rename" title="이름 변경">✏️</span><span class="chak-folder-del" title="폴더 삭제">✕</span></span>`;
         hd.querySelector('.chak-folder-del').addEventListener('click', (e) => {
             e.stopPropagation(); if (confirm(`"${fname}" 삭제?`)) { removeFolder(fname); renderPresetList(); }
         });
+        hd.querySelector('.chak-folder-rename').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const newName = prompt('새 폴더 이름:', fname);
+            if (newName && newName.trim() && newName.trim() !== fname) { renameFolder(fname, newName.trim()); renderPresetList(); }
+        });
         const ct = document.createElement('div'); ct.className = 'chak-folder-content';
         let open = true;
-        hd.addEventListener('click', () => { open = !open; ct.style.display = open ? '' : 'none'; });
+        hd.addEventListener('click', (e) => { if (e.target === hd || e.target.classList.contains('chak-folder-name')) { open = !open; ct.style.display = open ? '' : 'none'; } });
         presets.filter(p => members.includes(p.value)).forEach(p => ct.appendChild(createItem(p, t, false, fname)));
         fe.appendChild(hd); fe.appendChild(ct); foldersC.appendChild(fe);
     }
@@ -244,7 +256,7 @@ function createItem(preset, t, isFav, folder) {
     star.addEventListener('click', (e) => { e.stopPropagation(); toggleFavorite(preset.value); });
     acts.appendChild(star);
 
-    if (!isFav && !folder && Object.keys(getFolders()).length > 0) {
+    if (!folder && Object.keys(getFolders()).length > 0) {
         const fb = document.createElement('span'); fb.className = 'chak-item-folder-btn';
         fb.textContent = '📁'; fb.title = '폴더에 추가';
         fb.addEventListener('click', (e) => {
@@ -290,12 +302,8 @@ function showFolderPicker(anchorEl, presetValue, t) {
         picker.appendChild(opt);
     });
 
-    // Position near anchor
+    // Position: CSS handles centering
     panelEl.appendChild(picker);
-    const panelRect = panelEl.getBoundingClientRect();
-    const anchorRect = anchorEl.getBoundingClientRect();
-    picker.style.top = (anchorRect.top - panelRect.top - picker.offsetHeight) + 'px';
-    picker.style.right = '8px';
 
     // Close on outside click
     const closePicker = (e) => {
