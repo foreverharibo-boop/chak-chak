@@ -29,12 +29,27 @@ function getSTColor(varName, fallback) {
     return val || fallback;
 }
 
+function forceOpaque(cssColor) {
+    // Parse rgba/hsla and force alpha to 1
+    const el = document.createElement('span');
+    el.style.color = cssColor;
+    document.body.appendChild(el);
+    const computed = getComputedStyle(el).color;
+    el.remove();
+    // computed is always rgb(r,g,b) or rgba(r,g,b,a)
+    const match = computed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (match) {
+        return `rgb(${match[1]}, ${match[2]}, ${match[3]})`;
+    }
+    return cssColor;
+}
+
 function applyThemeToPanel() {
     if (!panelEl) return;
     const bg = getSTColor('--SmartThemeBlurTintColor', '#2a2a3e');
-    const textColor = getSTColor('--SmartThemeBodyColor', '#ccc');
+    const textColor = forceOpaque(getSTColor('--SmartThemeBodyColor', '#ccc'));
     const borderColor = getSTColor('--SmartThemeBorderColor', '#555');
-    const quoteColor = getSTColor('--SmartThemeQuoteColor', '#5e8ad4');
+    const quoteColor = forceOpaque(getSTColor('--SmartThemeQuoteColor', '#5e8ad4'));
 
     panelEl.style.setProperty('--chak-bg', bg);
     panelEl.style.setProperty('--chak-text', textColor);
@@ -44,7 +59,7 @@ function applyThemeToPanel() {
 
 function applyThemeToToast(toast) {
     const bg = getSTColor('--SmartThemeBlurTintColor', '#2a2a3e');
-    const textColor = getSTColor('--SmartThemeBodyColor', '#ccc');
+    const textColor = forceOpaque(getSTColor('--SmartThemeBodyColor', '#ccc'));
     const borderColor = getSTColor('--SmartThemeBorderColor', '#555');
     toast.style.setProperty('--chak-bg', bg);
     toast.style.setProperty('--chak-text', textColor);
