@@ -117,6 +117,10 @@ function showToast(name) {
 }
 
 // ── Favorites & Folders ──
+const folderOpenState = {};  // { folderName: true/false }
+function isFolderOpen(name) { return folderOpenState[name] !== false; }  // default open
+function setFolderOpen(name, open) { folderOpenState[name] = open; }
+
 function isFavorite(v) { return getSettings().favorites.includes(v); }
 function toggleFavorite(v) {
     const s = getSettings(); const i = s.favorites.indexOf(v);
@@ -224,8 +228,8 @@ function renderPresetList() {
             if (newName && newName.trim() && newName.trim() !== fname) { renameFolder(fname, newName.trim()); renderPresetList(); }
         });
         const ct = document.createElement('div'); ct.className = 'chak-folder-content';
-        let open = true;
-        hd.addEventListener('click', (e) => { if (e.target === hd || e.target.classList.contains('chak-folder-name')) { open = !open; ct.style.display = open ? '' : 'none'; } });
+        ct.style.display = isFolderOpen(fname) ? '' : 'none';
+        hd.addEventListener('click', (e) => { if (e.target === hd || e.target.classList.contains('chak-folder-name')) { setFolderOpen(fname, !isFolderOpen(fname)); ct.style.display = isFolderOpen(fname) ? '' : 'none'; } });
         presets.filter(p => members.includes(p.value)).forEach(p => ct.appendChild(createItem(p, t, false, fname)));
         fe.appendChild(hd); fe.appendChild(ct); foldersC.appendChild(fe);
     }
@@ -239,7 +243,8 @@ function renderPresetList() {
     }
 
     allC.innerHTML = '';
-    presets.forEach(p => allC.appendChild(createItem(p, t, false, null)));
+    const inFolder = new Set(Object.values(getFolders()).flat());
+    presets.filter(p => !inFolder.has(p.value)).forEach(p => allC.appendChild(createItem(p, t, false, null)));
 }
 
 function createItem(preset, t, isFav, folder) {
