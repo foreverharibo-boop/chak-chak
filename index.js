@@ -9,6 +9,7 @@ function getSettings() {
     if (!ctx.extensionSettings[settingsKey]) ctx.extensionSettings[settingsKey] = structuredClone(defaultSettings);
     const s = ctx.extensionSettings[settingsKey];
     if (!s.folders) s.folders = {};
+    if (!s.folderOpenState) s.folderOpenState = {};
     return s;
 }
 function saveSettings() { SillyTavern.getContext().saveSettingsDebounced(); }
