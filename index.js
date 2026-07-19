@@ -2,7 +2,7 @@
 const extensionName = 'chak-chak';
 const settingsKey = 'chak_chak';
 
-const defaultSettings = { enabled: true, favorites: [], folders: {} };
+const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {} };
 
 function getSettings() {
     const ctx = SillyTavern.getContext();
@@ -117,9 +117,13 @@ function showToast(name) {
 }
 
 // ── Favorites & Folders ──
-const folderOpenState = {};  // { folderName: true/false }
-function isFolderOpen(name) { return folderOpenState[name] !== false; }  // default open
-function setFolderOpen(name, open) { folderOpenState[name] = open; }
+function isFolderOpen(name) { return getSettings().folderOpenState?.[name] !== false; }
+function setFolderOpen(name, open) {
+    const s = getSettings();
+    if (!s.folderOpenState) s.folderOpenState = {};
+    s.folderOpenState[name] = open;
+    saveSettings();
+}
 
 function isFavorite(v) { return getSettings().favorites.includes(v); }
 function toggleFavorite(v) {
@@ -140,9 +144,10 @@ function renameFolder(oldName, newName) {
         s.folders[k === oldName ? newName : k] = v;
     }
     // 열림 상태도 이전
-    if (folderOpenState[oldName] !== undefined) {
-        folderOpenState[newName] = folderOpenState[oldName];
-        delete folderOpenState[oldName];
+    if (s.folderOpenState?.[oldName] !== undefined) {
+        if (!s.folderOpenState) s.folderOpenState = {};
+        s.folderOpenState[newName] = s.folderOpenState[oldName];
+        delete s.folderOpenState[oldName];
     }
     saveSettings();
 }
