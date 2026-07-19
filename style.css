@@ -92,3 +92,28 @@
 
 .chak-settings .checkbox_label { margin: 8px 0; }
 .chak-settings-desc { font-size: 12px; margin: 4px 0 8px; }
+
+/* ── 모바일 강제 중앙 ── */
+@media (max-width: 1200px) and (pointer: coarse) {
+    #chak-backdrop {
+        position: fixed !important;
+        top: 0 !important; left: 0 !important;
+        width: 100vw !important; height: 100vh !important;
+        right: auto !important; bottom: auto !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        z-index: 99998 !important;
+    }
+    #chak-backdrop.chak-backdrop--hidden { display: none !important; }
+    #chak-panel {
+        position: relative !important;
+        top: auto !important; left: auto !important;
+        right: auto !important; bottom: auto !important;
+        transform: none !important;
+        margin: auto !important;
+        width: calc(100vw - 40px) !important;
+        max-width: 320px !important;
+        max-height: 65vh !important;
+    }
+}
