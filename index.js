@@ -132,9 +132,40 @@ function addFolder(name) { const s = getSettings(); if (!s.folders[name]) { s.fo
 function removeFolder(name) { delete getSettings().folders[name]; saveSettings(); }
 function renameFolder(oldName, newName) {
     const s = getSettings();
-    if (s.folders[newName]) return; // 이미 존재하면 무시
-    s.folders[newName] = s.folders[oldName] || [];
-    delete s.folders[oldName];
+    if (s.folders[newName]) return;
+    // 순서 유지하면서 키 변경
+    const entries = Object.entries(s.folders);
+    s.folders = {};
+    for (const [k, v] of entries) {
+        s.folders[k === oldName ? newName : k] = v;
+    }
+    // 열림 상태도 이전
+    if (folderOpenState[oldName] !== undefined) {
+        folderOpenState[newName] = folderOpenState[oldName];
+        delete folderOpenState[oldName];
+    }
+    saveSettings();
+}
+function moveFolderUp(name) {
+    const s = getSettings();
+    const keys = Object.keys(s.folders);
+    const idx = keys.indexOf(name);
+    if (idx <= 0) return;
+    [keys[idx - 1], keys[idx]] = [keys[idx], keys[idx - 1]];
+    const newFolders = {};
+    keys.forEach(k => newFolders[k] = s.folders[k]);
+    s.folders = newFolders;
+    saveSettings();
+}
+function moveFolderDown(name) {
+    const s = getSettings();
+    const keys = Object.keys(s.folders);
+    const idx = keys.indexOf(name);
+    if (idx < 0 || idx >= keys.length - 1) return;
+    [keys[idx], keys[idx + 1]] = [keys[idx + 1], keys[idx]];
+    const newFolders = {};
+    keys.forEach(k => newFolders[k] = s.folders[k]);
+    s.folders = newFolders;
     saveSettings();
 }
 function addToFolder(f, v) { const s = getSettings(); if (!s.folders[f]) s.folders[f] = []; if (!s.folders[f].includes(v)) { s.folders[f].push(v); saveSettings(); } }
@@ -170,8 +201,8 @@ function buildUI() {
         <div class="chak-current">현재: <strong class="chak-current-name"></strong></div>
         <div class="chak-divider"></div>
         <div class="chak-list-section">
-            <div class="chak-list chak-list--folders"></div>
             <div class="chak-list chak-list--favorites"></div>
+            <div class="chak-list chak-list--folders"></div>
             <div class="chak-section-label">전체 프리셋</div>
             <div class="chak-list chak-list--all"></div>
         </div>`;
@@ -218,9 +249,15 @@ function renderPresetList() {
     for (const [fname, members] of Object.entries(getFolders())) {
         const fe = document.createElement('div'); fe.className = 'chak-folder';
         const hd = document.createElement('div'); hd.className = 'chak-folder-header'; hd.style.color = t.text;
-        hd.innerHTML = `<span class="chak-folder-name">📁 ${fname}</span><span class="chak-folder-actions"><span class="chak-folder-rename" title="이름 변경">✏️</span><span class="chak-folder-del" title="폴더 삭제">✕</span></span>`;
+        hd.innerHTML = `<span class="chak-folder-name">📁 ${fname}</span><span class="chak-folder-actions"><span class="chak-folder-move-up" title="위로">▲</span><span class="chak-folder-move-down" title="아래로">▼</span><span class="chak-folder-rename" title="이름 변경">✏️</span><span class="chak-folder-del" title="폴더 삭제">✕</span></span>`;
         hd.querySelector('.chak-folder-del').addEventListener('click', (e) => {
             e.stopPropagation(); if (confirm(`"${fname}" 삭제?`)) { removeFolder(fname); renderPresetList(); }
+        });
+        hd.querySelector('.chak-folder-move-up').addEventListener('click', (e) => {
+            e.stopPropagation(); moveFolderUp(fname); renderPresetList();
+        });
+        hd.querySelector('.chak-folder-move-down').addEventListener('click', (e) => {
+            e.stopPropagation(); moveFolderDown(fname); renderPresetList();
         });
         hd.querySelector('.chak-folder-rename').addEventListener('click', (e) => {
             e.stopPropagation();
