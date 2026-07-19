@@ -7,7 +7,6 @@ const settingsKey = 'chak_chak';
 const defaultSettings = {
     enabled: true,
     favorites: [],
-    panelOpen: false,
 };
 
 function getSettings() {
@@ -33,7 +32,6 @@ const SELECTOR_MAP = {
 };
 
 function getMainApi() {
-    // ST stores main_api globally
     return window.main_api ?? document.getElementById('main_api')?.value ?? 'openai';
 }
 
@@ -44,7 +42,6 @@ function getPresetSelector() {
         const el = document.querySelector(selectorId);
         if (el) return el;
     }
-    // Fallback: try all known selectors
     for (const id of Object.values(SELECTOR_MAP)) {
         const el = document.querySelector(id);
         if (el && el.options.length > 0) return el;
@@ -118,14 +115,24 @@ let panelEl = null;
 let fabEl = null;
 
 function buildUI() {
-    // FAB (Floating Action Button)
+    // FAB — inject into ST's send form area
     fabEl = document.createElement('div');
     fabEl.id = 'chak-fab';
     fabEl.innerHTML = `<span class="chak-fab-icon">⚡</span>`;
     fabEl.title = '착착 — 프리셋 전환';
-    fabEl.addEventListener('click', togglePanel);
+    fabEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        togglePanel();
+    });
 
-    // Panel
+    // Try to inject FAB into ST's input toolbar
+    const injected = injectFab();
+    if (!injected) {
+        // Fallback: append to <html> with fixed position
+        document.documentElement.appendChild(fabEl);
+    }
+
+    // Panel — always on <html> to avoid MovingUI
     panelEl = document.createElement('div');
     panelEl.id = 'chak-panel';
     panelEl.classList.add('chak-panel--hidden');
@@ -147,9 +154,6 @@ function buildUI() {
     `;
 
     panelEl.querySelector('.chak-panel-close').addEventListener('click', togglePanel);
-
-    // Append to <html> to avoid MovingUI transform issues
-    document.documentElement.appendChild(fabEl);
     document.documentElement.appendChild(panelEl);
 
     // Close panel on outside click
@@ -160,7 +164,26 @@ function buildUI() {
             }
         }
     });
+}
 
+function injectFab() {
+    // Try multiple known ST containers for the input area buttons
+    const targets = [
+        '#rightSendForm',           // Right side of send form
+        '#leftSendForm',            // Left side of send form
+        '#send_form .panelControlBar', // Control bar
+        '#form_sheld .panelControlBar',
+        '#send_form',
+    ];
+
+    for (const selector of targets) {
+        const container = document.querySelector(selector);
+        if (container) {
+            container.appendChild(fabEl);
+            return true;
+        }
+    }
+    return false;
 }
 
 function togglePanel() {
@@ -174,6 +197,10 @@ function togglePanel() {
 function openPanel() {
     renderPresetList();
     updateCurrentLabel();
+    // Position panel near FAB
+    const fabRect = fabEl.getBoundingClientRect();
+    panelEl.style.bottom = (window.innerHeight - fabRect.top + 4) + 'px';
+    panelEl.style.right = Math.max(8, window.innerWidth - fabRect.right) + 'px';
     panelEl.classList.remove('chak-panel--hidden');
     fabEl.classList.add('chak-fab--active');
 }
@@ -195,12 +222,10 @@ function renderPresetList() {
     const allContainer = panelEl.querySelector('.chak-list--all');
 
     const favorites = presets.filter(p => settings.favorites.includes(p.value));
-    const rest = presets;
 
     // Favorites section
-    const favLabel = panelEl.querySelector('.chak-section-label');
     if (favorites.length === 0) {
-        favContainer.innerHTML = '<div class="chak-empty">길게 눌러서 즐겨찾기 추가</div>';
+        favContainer.innerHTML = '';
     } else {
         favContainer.innerHTML = '';
         favorites.forEach(p => favContainer.appendChild(createPresetItem(p, true)));
@@ -208,7 +233,7 @@ function renderPresetList() {
 
     // All presets
     allContainer.innerHTML = '';
-    rest.forEach(p => allContainer.appendChild(createPresetItem(p, false)));
+    presets.forEach(p => allContainer.appendChild(createPresetItem(p, false)));
 }
 
 function createPresetItem(preset, isFavSection) {
@@ -236,7 +261,7 @@ function createPresetItem(preset, isFavSection) {
     return item;
 }
 
-// ── Extension settings panel (in ST extensions tab) ──
+// ── Extension settings panel ──
 
 function buildSettingsUI() {
     const html = `
@@ -288,7 +313,6 @@ function updateVisibility() {
         }
     });
 
-    // Watch for preset selector changes
     for (const id of Object.values(SELECTOR_MAP)) {
         const el = document.querySelector(id);
         if (el) {

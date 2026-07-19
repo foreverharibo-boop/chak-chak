@@ -1,39 +1,37 @@
 /* 착착 (Chak-Chak) — Quick Preset Switcher */
 
-/* ── FAB — 고정 위치 (입력창 위 우측) ── */
+/* ── FAB — ST 입력창 버튼 줄에 삽입 ── */
 #chak-fab {
-    position: fixed;
-    bottom: 45px;
-    right: 100px;
-    z-index: 99999;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background-color: var(--SmartThemeChatMesColorBlock, var(--SmartThemeBlurTintColor, #2a2a3e));
-    border: 1px solid var(--SmartThemeBorderColor, #555);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    background-color: transparent;
+    border: none;
     cursor: pointer;
-    transition: transform 0.15s, background-color 0.15s;
+    transition: transform 0.15s;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
+    vertical-align: middle;
 }
 
 #chak-fab:hover {
-    transform: scale(1.1);
+    transform: scale(1.15);
 }
 
 #chak-fab:active {
-    transform: scale(0.95);
+    transform: scale(0.92);
 }
 
 #chak-fab.chak-fab--active {
     background-color: var(--SmartThemeQuoteColor, #5e8ad4);
+    border-radius: 50%;
 }
 
 .chak-fab-icon {
-    font-size: 13px;
+    font-size: 16px;
     line-height: 1;
     pointer-events: none;
 }
@@ -42,13 +40,13 @@
 #chak-panel {
     position: fixed;
     bottom: 80px;
-    right: 60px;
+    right: 16px;
     z-index: 99998;
     width: 240px;
     max-height: 400px;
     border-radius: 10px;
-    background-color: var(--SmartThemeChatMesColorBlock, var(--SmartThemeBlurTintColor, #2a2a3e));
-    border: 1px solid var(--SmartThemeBorderColor, #555);
+    background-color: var(--SmartThemeChatMesColorBlock, #fff);
+    border: 1px solid var(--SmartThemeBorderColor, #ccc);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -121,6 +119,15 @@
     letter-spacing: 0.5px;
 }
 
+/* 즐겨찾기 비어있으면 섹션 숨기기 */
+.chak-list--favorites:empty {
+    display: none;
+}
+
+.chak-list--favorites:empty + .chak-section-label {
+    margin-top: 0;
+}
+
 /* ── Preset Items ── */
 .chak-item {
     display: flex;
@@ -173,25 +180,17 @@
     color: #f0c040;
 }
 
-/* ── Empty state ── */
-.chak-empty {
-    font-size: 11px;
-    color: var(--SmartThemeBodyColor, #888);
-    padding: 4px 6px;
-    font-style: italic;
-}
-
 /* ── Toast ── */
 .chak-toast {
     position: fixed;
-    bottom: 50px;
+    bottom: 80px;
     left: 50%;
     transform: translateX(-50%) translateY(8px);
     z-index: 100000;
     padding: 6px 16px;
     border-radius: 16px;
-    background-color: var(--SmartThemeChatMesColorBlock, var(--SmartThemeBlurTintColor, #2a2a3e));
-    border: 1px solid var(--SmartThemeBorderColor, #555);
+    background-color: var(--SmartThemeChatMesColorBlock, #fff);
+    border: 1px solid var(--SmartThemeBorderColor, #ccc);
     color: var(--SmartThemeBodyColor, #222);
     font-size: 12px;
     font-weight: 600;
