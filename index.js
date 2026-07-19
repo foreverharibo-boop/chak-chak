@@ -46,9 +46,9 @@ function forceOpaque(cssColor) {
 
 function applyThemeToPanel() {
     if (!panelEl) return;
-    const bg = getSTColor('--SmartThemeBlurTintColor', '#2a2a3e');
+    const bg = forceOpaque(getSTColor('--SmartThemeBlurTintColor', '#2a2a3e'));
     const textColor = forceOpaque(getSTColor('--SmartThemeBodyColor', '#ccc'));
-    const borderColor = getSTColor('--SmartThemeBorderColor', '#555');
+    const borderColor = forceOpaque(getSTColor('--SmartThemeBorderColor', '#555'));
     const quoteColor = forceOpaque(getSTColor('--SmartThemeQuoteColor', '#5e8ad4'));
 
     panelEl.style.setProperty('--chak-bg', bg);
@@ -58,9 +58,9 @@ function applyThemeToPanel() {
 }
 
 function applyThemeToToast(toast) {
-    const bg = getSTColor('--SmartThemeBlurTintColor', '#2a2a3e');
+    const bg = forceOpaque(getSTColor('--SmartThemeBlurTintColor', '#2a2a3e'));
     const textColor = forceOpaque(getSTColor('--SmartThemeBodyColor', '#ccc'));
-    const borderColor = getSTColor('--SmartThemeBorderColor', '#555');
+    const borderColor = forceOpaque(getSTColor('--SmartThemeBorderColor', '#555'));
     toast.style.setProperty('--chak-bg', bg);
     toast.style.setProperty('--chak-text', textColor);
     toast.style.setProperty('--chak-border', borderColor);
