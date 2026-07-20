@@ -572,7 +572,8 @@ let _applyingOptgroups = false;
     const obs = new MutationObserver(() => {
         if (_applyingOptgroups) return; // 우리가 변경한 거면 무시
         if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
-            renderPresetList(); updateCurrentLabel();
+            const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
+            renderPresetList(q || undefined); updateCurrentLabel();
         }
         scheduleOptgroupSync();
     });
