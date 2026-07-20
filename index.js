@@ -98,29 +98,29 @@ function getPresetSelector() {
 function getCurrentPresetName() { const s = getPresetSelector(); return (s && s.selectedIndex >= 0) ? s.options[s.selectedIndex].text : '(없음)'; }
 function getPresetList() {
     const s = getPresetSelector();
-    return s ? Array.from(s.options).filter(o => !o.dataset.chakClone).map(o => ({ value: o.value, name: o.text, selected: o.selected })) : [];
+    return s ? Array.from(s.options).map(o => ({ value: o.value, name: o.text, selected: o.selected })) : [];
 }
 function switchPreset(value) {
     const s = getPresetSelector(); if (!s) return;
+    // optgroup 임시 해제 → 값 변경 → 재적용
+    _applyingOptgroups = true;
+    removeOptgroups(s);
     s.value = value;
-    s.dispatchEvent(new Event('change', { bubbles: true }));
-    // 최근 사용 기록
-    addRecent(value);
-    // 연결 프로필 자동 저장
+    // jQuery 이벤트 + 네이티브 이벤트 둘 다 발동
+    if (typeof $ !== 'undefined') {
+        $(s).trigger('change');
+    } else {
+        s.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     setTimeout(() => {
+        applyOptgroups();
+        _applyingOptgroups = false;
+        // 연결 프로필 자동 저장
         const saveBtn = document.getElementById('update_connection_profile');
         if (saveBtn) saveBtn.click();
-    }, 300);
+    }, 400);
     renderPresetList(); updateCurrentLabel();
     showToast(s.options[s.selectedIndex]?.text ?? value);
-}
-
-function addRecent(value) {
-    const s = getSettings();
-    s.recentPresets = s.recentPresets.filter(v => v !== value);
-    s.recentPresets.unshift(value);
-    if (s.recentPresets.length > 5) s.recentPresets = s.recentPresets.slice(0, 5);
-    saveSettings();
 }
 
 function showToast(name) {
@@ -235,7 +235,6 @@ function buildUI() {
         </div>
         <div class="chak-divider"></div>
         <div class="chak-list-section">
-            <div class="chak-list chak-list--recent"></div>
             <div class="chak-list chak-list--favorites"></div>
             <div class="chak-list chak-list--folders"></div>
             <div class="chak-section-label">전체 프리셋</div>
@@ -282,7 +281,6 @@ function updateCurrentLabel() {
 function renderPresetList(searchQuery) {
     let presets = getPresetList();
     const settings = getSettings(), t = getTheme();
-    const recentC = panelEl.querySelector('.chak-list--recent');
     const foldersC = panelEl.querySelector('.chak-list--folders');
     const favC = panelEl.querySelector('.chak-list--favorites');
     const allC = panelEl.querySelector('.chak-list--all');
@@ -291,27 +289,6 @@ function renderPresetList(searchQuery) {
     // 검색 필터
     if (searchQuery) {
         presets = presets.filter(p => p.name.toLowerCase().includes(searchQuery));
-    }
-
-    // ── 최근 사용 ──
-    recentC.innerHTML = '';
-    if (!searchQuery && settings.recentPresets.length > 0) {
-        const recentPresets = settings.recentPresets
-            .map(v => presets.find(p => p.value === v))
-            .filter(Boolean);
-        if (recentPresets.length > 0) {
-            const hd = document.createElement('div'); hd.className = 'chak-recent-header'; hd.style.color = t.text;
-            hd.innerHTML = `<span>🕐 최근 사용</span><span class="chak-recent-toggle">${settings.recentOpen ? '▼' : '▶'}</span>`;
-            hd.addEventListener('click', () => {
-                settings.recentOpen = !settings.recentOpen;
-                saveSettings();
-                renderPresetList(searchQuery);
-            });
-            recentC.appendChild(hd);
-            if (settings.recentOpen) {
-                recentPresets.forEach(p => recentC.appendChild(createItem(p, t, false, null)));
-            }
-        }
     }
 
     // ── 즐겨찾기 ──
@@ -463,30 +440,19 @@ function _applyOptgroupsInner() {
     if (!sel) return;
 
     const folders = getFolders();
-    const favorites = getSettings().favorites;
-    if (Object.keys(folders).length === 0 && favorites.length === 0) {
+    if (Object.keys(folders).length === 0) {
         removeOptgroups(sel);
         return;
     }
 
-    // 현재 선택값 보존
     const currentValue = sel.value;
-
-    // 이미 optgroup 적용돼있으면 먼저 풀기
     removeOptgroups(sel);
 
-    // 폴더에 속한 option들 수집
-    const inFolder = new Map(); // value → folderName
+    const inFolder = new Map();
     for (const [fname, members] of Object.entries(folders)) {
         for (const v of members) inFolder.set(v, fname);
     }
 
-    // 즐겨찾기 optgroup
-    const favGroup = document.createElement('optgroup');
-    favGroup.label = '⭐ 즐겨찾기';
-    favGroup.dataset.chakFolder = '__favorites__';
-
-    // 폴더별로 optgroup 생성
     const folderGroups = {};
     for (const fname of Object.keys(folders)) {
         const grp = document.createElement('optgroup');
@@ -495,19 +461,11 @@ function _applyOptgroupsInner() {
         folderGroups[fname] = grp;
     }
 
-    // option 분류
+    // option 분류 (폴더만, 즐겨찾기 복제 없음)
     const allOptions = Array.from(sel.options);
     const ungrouped = [];
-    const favOptionClones = []; // 즐겨찾기는 복제본 사용 (원본은 폴더나 미분류에 유지)
 
     for (const opt of allOptions) {
-        // 즐겨찾기면 복제본 만들기
-        if (favorites.includes(opt.value)) {
-            const clone = opt.cloneNode(true);
-            clone.dataset.chakClone = '1';
-            favOptionClones.push(clone);
-        }
-        // 폴더 분류
         const folder = inFolder.get(opt.value);
         if (folder && folderGroups[folder]) {
             folderGroups[folder].appendChild(opt);
@@ -516,12 +474,8 @@ function _applyOptgroupsInner() {
         }
     }
 
-    // select 비우고 재구성: 즐겨찾기 → 폴더 → 미분류
+    // select 비우고 재구성: 폴더 → 미분류
     sel.innerHTML = '';
-    if (favOptionClones.length > 0) {
-        favOptionClones.forEach(opt => favGroup.appendChild(opt));
-        sel.appendChild(favGroup);
-    }
     for (const grp of Object.values(folderGroups)) {
         if (grp.children.length > 0) sel.appendChild(grp);
     }
@@ -537,21 +491,13 @@ function _applyOptgroupsInner() {
 function removeOptgroups(sel) {
     if (!sel) return;
     const currentValue = sel.value;
-
     const groups = sel.querySelectorAll('optgroup[data-chak-folder]');
     for (const grp of groups) {
-        if (grp.dataset.chakFolder === '__favorites__') {
-            // 즐겨찾기는 복제본이므로 그냥 삭제
-            grp.remove();
-        } else {
-            // 폴더 optgroup: option들을 밖으로 꺼내기
-            while (grp.firstChild) {
-                sel.insertBefore(grp.firstChild, grp);
-            }
-            grp.remove();
+        while (grp.firstChild) {
+            sel.insertBefore(grp.firstChild, grp);
         }
+        grp.remove();
     }
-
     sel.value = currentValue;
     optgroupApplied = false;
 }
