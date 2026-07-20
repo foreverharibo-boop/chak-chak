@@ -2,7 +2,7 @@
 const extensionName = 'chak-chak';
 const settingsKey = 'chak_chak';
 
-const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {} };
+const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true };
 
 function getSettings() {
     const ctx = SillyTavern.getContext();
@@ -10,6 +10,8 @@ function getSettings() {
     const s = ctx.extensionSettings[settingsKey];
     if (!s.folders) s.folders = {};
     if (!s.folderOpenState) s.folderOpenState = {};
+    if (!s.recentPresets) s.recentPresets = [];
+    if (s.recentOpen === undefined) s.recentOpen = true;
     return s;
 }
 function saveSettings() { SillyTavern.getContext().saveSettingsDebounced(); }
@@ -51,21 +53,24 @@ function readSTVar(varName) {
     return val;
 }
 
-function getTheme() {
+let _themeCache = null;
+function getTheme(forceRefresh) {
+    if (_themeCache && !forceRefresh) return _themeCache;
     const bgRaw = readSTVar('--SmartThemeBlurTintColor') || 'rgba(240,232,234,1)';
     const textRaw = readSTVar('--SmartThemeBodyColor') || '#333';
     const borderRaw = readSTVar('--SmartThemeBorderColor') || '#ccc';
     const accentRaw = readSTVar('--SmartThemeQuoteColor') || '#5e8ad4';
-    return {
+    _themeCache = {
         bg: compositeOnWhite(bgRaw),
         text: forceOpaque(textRaw),
         border: forceOpaque(borderRaw),
         accent: forceOpaque(accentRaw),
     };
+    return _themeCache;
 }
 
-function applyTheme(el) {
-    const t = getTheme();
+function applyTheme(el, refresh) {
+    const t = getTheme(refresh);
     el.style.backgroundColor = t.bg;
     el.style.color = t.text;
     el.style.borderColor = t.border;
@@ -99,6 +104,8 @@ function switchPreset(value) {
     const s = getPresetSelector(); if (!s) return;
     s.value = value;
     s.dispatchEvent(new Event('change', { bubbles: true }));
+    // 최근 사용 기록
+    addRecent(value);
     // 연결 프로필 자동 저장
     setTimeout(() => {
         const saveBtn = document.getElementById('update_connection_profile');
@@ -106,6 +113,14 @@ function switchPreset(value) {
     }, 300);
     renderPresetList(); updateCurrentLabel();
     showToast(s.options[s.selectedIndex]?.text ?? value);
+}
+
+function addRecent(value) {
+    const s = getSettings();
+    s.recentPresets = s.recentPresets.filter(v => v !== value);
+    s.recentPresets.unshift(value);
+    if (s.recentPresets.length > 5) s.recentPresets = s.recentPresets.slice(0, 5);
+    saveSettings();
 }
 
 function showToast(name) {
@@ -215,14 +230,21 @@ function buildUI() {
             </div>
         </div>
         <div class="chak-current">현재: <strong class="chak-current-name"></strong></div>
+        <div class="chak-search-wrap">
+            <input type="text" class="chak-search" placeholder="🔍 프리셋 검색..." />
+        </div>
         <div class="chak-divider"></div>
         <div class="chak-list-section">
+            <div class="chak-list chak-list--recent"></div>
             <div class="chak-list chak-list--favorites"></div>
             <div class="chak-list chak-list--folders"></div>
             <div class="chak-section-label">전체 프리셋</div>
             <div class="chak-list chak-list--all"></div>
         </div>`;
     panelEl.querySelector('.chak-panel-close').addEventListener('click', closePanel);
+    panelEl.querySelector('.chak-search').addEventListener('input', (e) => {
+        renderPresetList(e.target.value.trim().toLowerCase());
+    });
     panelEl.querySelector('.chak-folder-add').addEventListener('click', () => {
         const n = prompt('폴더 이름:'); if (n?.trim()) { addFolder(n.trim()); renderPresetList(); }
     });
@@ -245,7 +267,9 @@ function injectFab() {
 
 function togglePanel() { backdropEl.classList.contains('chak-backdrop--hidden') ? openPanel() : closePanel(); }
 function openPanel() {
-    renderPresetList(); updateCurrentLabel(); applyTheme(panelEl);
+    const searchInput = panelEl.querySelector('.chak-search');
+    if (searchInput) searchInput.value = '';
+    renderPresetList(); updateCurrentLabel(); applyTheme(panelEl, true);
     backdropEl.classList.remove('chak-backdrop--hidden');
     fabEl.classList.add('chak-fab--active');
 }
@@ -255,49 +279,91 @@ function updateCurrentLabel() {
     if (l) { l.textContent = getCurrentPresetName(); l.style.color = getTheme().accent; }
 }
 
-function renderPresetList() {
-    const presets = getPresetList(), settings = getSettings(), t = getTheme();
+function renderPresetList(searchQuery) {
+    let presets = getPresetList();
+    const settings = getSettings(), t = getTheme();
+    const recentC = panelEl.querySelector('.chak-list--recent');
     const foldersC = panelEl.querySelector('.chak-list--folders');
     const favC = panelEl.querySelector('.chak-list--favorites');
     const allC = panelEl.querySelector('.chak-list--all');
+    const allLabel = panelEl.querySelector('.chak-list-section > .chak-section-label');
 
-    foldersC.innerHTML = '';
-    for (const [fname, members] of Object.entries(getFolders())) {
-        const fe = document.createElement('div'); fe.className = 'chak-folder';
-        const hd = document.createElement('div'); hd.className = 'chak-folder-header'; hd.style.color = t.text;
-        hd.innerHTML = `<span class="chak-folder-name">📁 ${fname}</span><span class="chak-folder-actions"><span class="chak-folder-move-up" title="위로">▲</span><span class="chak-folder-move-down" title="아래로">▼</span><span class="chak-folder-rename" title="이름 변경">✏️</span><span class="chak-folder-del" title="폴더 삭제">✕</span></span>`;
-        hd.querySelector('.chak-folder-del').addEventListener('click', (e) => {
-            e.stopPropagation(); if (confirm(`"${fname}" 삭제?`)) { removeFolder(fname); renderPresetList(); }
-        });
-        hd.querySelector('.chak-folder-move-up').addEventListener('click', (e) => {
-            e.stopPropagation(); moveFolderUp(fname); renderPresetList();
-        });
-        hd.querySelector('.chak-folder-move-down').addEventListener('click', (e) => {
-            e.stopPropagation(); moveFolderDown(fname); renderPresetList();
-        });
-        hd.querySelector('.chak-folder-rename').addEventListener('click', (e) => {
-            e.stopPropagation();
-            const newName = prompt('새 폴더 이름:', fname);
-            if (newName && newName.trim() && newName.trim() !== fname) { renameFolder(fname, newName.trim()); renderPresetList(); }
-        });
-        const ct = document.createElement('div'); ct.className = 'chak-folder-content';
-        ct.style.display = isFolderOpen(fname) ? '' : 'none';
-        hd.addEventListener('click', (e) => { if (e.target === hd || e.target.classList.contains('chak-folder-name')) { setFolderOpen(fname, !isFolderOpen(fname)); ct.style.display = isFolderOpen(fname) ? '' : 'none'; } });
-        presets.filter(p => members.includes(p.value)).forEach(p => ct.appendChild(createItem(p, t, false, fname)));
-        fe.appendChild(hd); fe.appendChild(ct); foldersC.appendChild(fe);
+    // 검색 필터
+    if (searchQuery) {
+        presets = presets.filter(p => p.name.toLowerCase().includes(searchQuery));
     }
 
+    // ── 최근 사용 ──
+    recentC.innerHTML = '';
+    if (!searchQuery && settings.recentPresets.length > 0) {
+        const recentPresets = settings.recentPresets
+            .map(v => presets.find(p => p.value === v))
+            .filter(Boolean);
+        if (recentPresets.length > 0) {
+            const hd = document.createElement('div'); hd.className = 'chak-recent-header'; hd.style.color = t.text;
+            hd.innerHTML = `<span>🕐 최근 사용</span><span class="chak-recent-toggle">${settings.recentOpen ? '▼' : '▶'}</span>`;
+            hd.addEventListener('click', () => {
+                settings.recentOpen = !settings.recentOpen;
+                saveSettings();
+                renderPresetList(searchQuery);
+            });
+            recentC.appendChild(hd);
+            if (settings.recentOpen) {
+                recentPresets.forEach(p => recentC.appendChild(createItem(p, t, false, null)));
+            }
+        }
+    }
+
+    // ── 즐겨찾기 ──
     favC.innerHTML = '';
-    const favs = presets.filter(p => settings.favorites.includes(p.value));
-    if (favs.length) {
-        const lb = document.createElement('div'); lb.className = 'chak-section-label'; lb.textContent = '⭐ 즐겨찾기'; lb.style.color = t.text;
-        favC.appendChild(lb);
-        favs.forEach(p => favC.appendChild(createItem(p, t, true, null)));
+    if (!searchQuery) {
+        const favs = presets.filter(p => settings.favorites.includes(p.value));
+        if (favs.length) {
+            const lb = document.createElement('div'); lb.className = 'chak-section-label'; lb.textContent = '⭐ 즐겨찾기'; lb.style.color = t.text;
+            favC.appendChild(lb);
+            favs.forEach(p => favC.appendChild(createItem(p, t, true, null)));
+        }
     }
 
+    // ── 폴더 ──
+    foldersC.innerHTML = '';
+    if (!searchQuery) {
+        for (const [fname, members] of Object.entries(getFolders())) {
+            const fe = document.createElement('div'); fe.className = 'chak-folder';
+            const hd = document.createElement('div'); hd.className = 'chak-folder-header'; hd.style.color = t.text;
+            hd.innerHTML = `<span class="chak-folder-name">📁 ${fname}</span><span class="chak-folder-actions"><span class="chak-folder-move-up" title="위로">▲</span><span class="chak-folder-move-down" title="아래로">▼</span><span class="chak-folder-rename" title="이름 변경">✏️</span><span class="chak-folder-del" title="폴더 삭제">✕</span></span>`;
+            hd.querySelector('.chak-folder-del').addEventListener('click', (e) => {
+                e.stopPropagation(); if (confirm(`"${fname}" 삭제?`)) { removeFolder(fname); renderPresetList(); }
+            });
+            hd.querySelector('.chak-folder-move-up').addEventListener('click', (e) => {
+                e.stopPropagation(); moveFolderUp(fname); renderPresetList();
+            });
+            hd.querySelector('.chak-folder-move-down').addEventListener('click', (e) => {
+                e.stopPropagation(); moveFolderDown(fname); renderPresetList();
+            });
+            hd.querySelector('.chak-folder-rename').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const newName = prompt('새 폴더 이름:', fname);
+                if (newName && newName.trim() && newName.trim() !== fname) { renameFolder(fname, newName.trim()); renderPresetList(); }
+            });
+            const ct = document.createElement('div'); ct.className = 'chak-folder-content';
+            ct.style.display = isFolderOpen(fname) ? '' : 'none';
+            hd.addEventListener('click', (e) => { if (e.target === hd || e.target.classList.contains('chak-folder-name')) { setFolderOpen(fname, !isFolderOpen(fname)); ct.style.display = isFolderOpen(fname) ? '' : 'none'; } });
+            presets.filter(p => members.includes(p.value)).forEach(p => ct.appendChild(createItem(p, t, false, fname)));
+            fe.appendChild(hd); fe.appendChild(ct); foldersC.appendChild(fe);
+        }
+    }
+
+    // ── 전체 (검색 시: 결과 전체, 비검색 시: 폴더 미분류만) ──
     allC.innerHTML = '';
-    const inFolder = new Set(Object.values(getFolders()).flat());
-    presets.filter(p => !inFolder.has(p.value)).forEach(p => allC.appendChild(createItem(p, t, false, null)));
+    if (searchQuery) {
+        allLabel.textContent = `🔍 검색 결과 (${presets.length})`;
+        presets.forEach(p => allC.appendChild(createItem(p, t, false, null)));
+    } else {
+        allLabel.textContent = '전체 프리셋';
+        const inFolder = new Set(Object.values(getFolders()).flat());
+        presets.filter(p => !inFolder.has(p.value)).forEach(p => allC.appendChild(createItem(p, t, false, null)));
+    }
 }
 
 function createItem(preset, t, isFav, folder) {
