@@ -98,7 +98,7 @@ function getPresetSelector() {
 function getCurrentPresetName() { const s = getPresetSelector(); return (s && s.selectedIndex >= 0) ? s.options[s.selectedIndex].text : '(없음)'; }
 function getPresetList() {
     const s = getPresetSelector();
-    return s ? Array.from(s.options).map(o => ({ value: o.value, name: o.text, selected: o.selected })) : [];
+    return s ? Array.from(s.options).filter(o => !o.dataset.chakClone).map(o => ({ value: o.value, name: o.text, selected: o.selected })) : [];
 }
 function switchPreset(value) {
     const s = getPresetSelector(); if (!s) return;
@@ -440,7 +440,8 @@ function _applyOptgroupsInner() {
     if (!sel) return;
 
     const folders = getFolders();
-    if (Object.keys(folders).length === 0) {
+    const favorites = getSettings().favorites;
+    if (Object.keys(folders).length === 0 && favorites.length === 0) {
         removeOptgroups(sel);
         return;
     }
@@ -453,6 +454,11 @@ function _applyOptgroupsInner() {
         for (const v of members) inFolder.set(v, fname);
     }
 
+    // 즐겨찾기 optgroup
+    const favGroup = document.createElement('optgroup');
+    favGroup.label = '⭐ 즐겨찾기';
+    favGroup.dataset.chakFolder = '__favorites__';
+
     const folderGroups = {};
     for (const fname of Object.keys(folders)) {
         const grp = document.createElement('optgroup');
@@ -461,11 +467,16 @@ function _applyOptgroupsInner() {
         folderGroups[fname] = grp;
     }
 
-    // option 분류 (폴더만, 즐겨찾기 복제 없음)
+    // option 분류
     const allOptions = Array.from(sel.options);
     const ungrouped = [];
 
     for (const opt of allOptions) {
+        if (favorites.includes(opt.value)) {
+            const clone = opt.cloneNode(true);
+            clone.dataset.chakClone = '1';
+            favGroup.appendChild(clone);
+        }
         const folder = inFolder.get(opt.value);
         if (folder && folderGroups[folder]) {
             folderGroups[folder].appendChild(opt);
@@ -474,8 +485,9 @@ function _applyOptgroupsInner() {
         }
     }
 
-    // select 비우고 재구성: 폴더 → 미분류
+    // select 비우고 재구성: 즐겨찾기 → 폴더 → 미분류
     sel.innerHTML = '';
+    if (favGroup.children.length > 0) sel.appendChild(favGroup);
     for (const grp of Object.values(folderGroups)) {
         if (grp.children.length > 0) sel.appendChild(grp);
     }
@@ -493,10 +505,14 @@ function removeOptgroups(sel) {
     const currentValue = sel.value;
     const groups = sel.querySelectorAll('optgroup[data-chak-folder]');
     for (const grp of groups) {
-        while (grp.firstChild) {
-            sel.insertBefore(grp.firstChild, grp);
+        if (grp.dataset.chakFolder === '__favorites__') {
+            grp.remove();
+        } else {
+            while (grp.firstChild) {
+                sel.insertBefore(grp.firstChild, grp);
+            }
+            grp.remove();
         }
-        grp.remove();
     }
     sel.value = currentValue;
     optgroupApplied = false;
