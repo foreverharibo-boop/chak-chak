@@ -93,7 +93,7 @@ function getPresetSelector() {
 function getCurrentPresetName() { const s = getPresetSelector(); return (s && s.selectedIndex >= 0) ? s.options[s.selectedIndex].text : '(없음)'; }
 function getPresetList() {
     const s = getPresetSelector();
-    return s ? Array.from(s.options).map(o => ({ value: o.value, name: o.text, selected: o.selected })) : [];
+    return s ? Array.from(s.options).filter(o => !o.dataset.chakClone).map(o => ({ value: o.value, name: o.text, selected: o.selected })) : [];
 }
 function switchPreset(value) {
     const s = getPresetSelector(); if (!s) return;
@@ -389,6 +389,10 @@ function updateVisibility() { if (fabEl) fabEl.style.display = getSettings().ena
 let optgroupApplied = false;
 
 function applyOptgroups() {
+    _applyingOptgroups = true;
+    try { _applyOptgroupsInner(); } finally { _applyingOptgroups = false; }
+}
+function _applyOptgroupsInner() {
     const sel = getPresetSelector();
     if (!sel) return;
 
@@ -434,6 +438,7 @@ function applyOptgroups() {
         // 즐겨찾기면 복제본 만들기
         if (favorites.includes(opt.value)) {
             const clone = opt.cloneNode(true);
+            clone.dataset.chakClone = '1';
             favOptionClones.push(clone);
         }
         // 폴더 분류
@@ -491,14 +496,15 @@ function scheduleOptgroupSync() {
     scheduleOptgroupSync._timer = setTimeout(() => applyOptgroups(), 200);
 }
 
+let _applyingOptgroups = false;
+
 (function init() {
     buildSettingsUI(); buildUI(); updateVisibility();
 
-    // 초기 optgroup 적용
     setTimeout(() => applyOptgroups(), 500);
 
-    // preset select 변경 감시 + optgroup 재적용
     const obs = new MutationObserver(() => {
+        if (_applyingOptgroups) return; // 우리가 변경한 거면 무시
         if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
             renderPresetList(); updateCurrentLabel();
         }
