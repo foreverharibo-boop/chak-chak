@@ -519,20 +519,35 @@ function removeOptgroups(sel) {
 }
 
 function scheduleOptgroupSync() {
-    // 디바운스: 연속 호출 방지
+    if (_selectFocused) return; // 피커 열려있으면 동기화 안 함
     clearTimeout(scheduleOptgroupSync._timer);
     scheduleOptgroupSync._timer = setTimeout(() => applyOptgroups(), 200);
 }
 
 let _applyingOptgroups = false;
+let _selectFocused = false;
 
 (function init() {
     buildSettingsUI(); buildUI(); updateVisibility();
 
     setTimeout(() => applyOptgroups(), 500);
 
+    // select 포커스 감시 — 피커 열려있을 때 동기화 중지
+    for (const id of Object.values(SELECTOR_MAP)) {
+        const el = document.querySelector(id);
+        if (el) {
+            el.addEventListener('focus', () => { _selectFocused = true; });
+            el.addEventListener('blur', () => {
+                _selectFocused = false;
+                scheduleOptgroupSync();
+            });
+            el.addEventListener('mousedown', () => { _selectFocused = true; });
+            el.addEventListener('touchstart', () => { _selectFocused = true; }, { passive: true });
+        }
+    }
+
     const obs = new MutationObserver(() => {
-        if (_applyingOptgroups) return; // 우리가 변경한 거면 무시
+        if (_applyingOptgroups || _selectFocused) return;
         if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
             const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
             renderPresetList(q || undefined); updateCurrentLabel();
