@@ -153,6 +153,13 @@ function toggleFavorite(v) {
 function getFolders() { return getSettings().folders; }
 function addFolder(name) { const s = getSettings(); if (!s.folders[name]) { s.folders[name] = []; saveSettings(); } }
 function removeFolder(name) { delete getSettings().folders[name]; saveSettings(); }
+function getPresetFolder(value) {
+    const folders = getFolders();
+    for (const [fname, members] of Object.entries(folders)) {
+        if (members.includes(value)) return fname;
+    }
+    return null;
+}
 function renameFolder(oldName, newName) {
     const s = getSettings();
     if (s.folders[newName]) return;
@@ -291,7 +298,7 @@ function renderPresetList(searchQuery) {
         if (favs.length) {
             const lb = document.createElement('div'); lb.className = 'chak-section-label'; lb.textContent = '⭐ 즐겨찾기'; lb.style.color = t.text;
             favC.appendChild(lb);
-            favs.forEach(p => favC.appendChild(createItem(p, t, true, null)));
+            favs.forEach(p => favC.appendChild(createItem(p, t, true, getPresetFolder(p.value))));
         }
     }
 
@@ -350,12 +357,13 @@ function createItem(preset, t, isFav, folder) {
     star.addEventListener('click', (e) => { e.stopPropagation(); toggleFavorite(preset.value); });
     acts.appendChild(star);
 
-    if (!folder && Object.keys(getFolders()).length > 0) {
+    const otherFolders = Object.keys(getFolders()).filter(f => f !== folder);
+    if (otherFolders.length > 0) {
         const fb = document.createElement('span'); fb.className = 'chak-item-folder-btn';
-        fb.textContent = '📁'; fb.title = '폴더에 추가';
+        fb.textContent = '📁'; fb.title = folder ? '다른 폴더로 이동' : '폴더에 추가';
         fb.addEventListener('click', (e) => {
             e.stopPropagation();
-            showFolderPicker(fb, preset.value, t);
+            showFolderPicker(fb, preset.value, t, folder);
         });
         acts.appendChild(fb);
     }
@@ -371,7 +379,7 @@ function createItem(preset, t, isFav, folder) {
     return item;
 }
 
-function showFolderPicker(anchorEl, presetValue, t) {
+function showFolderPicker(anchorEl, presetValue, t, currentFolder) {
     // Remove any existing picker
     document.querySelector('.chak-folder-picker')?.remove();
 
@@ -381,7 +389,7 @@ function showFolderPicker(anchorEl, presetValue, t) {
     picker.style.borderColor = t.border;
     picker.style.color = t.text;
 
-    const names = Object.keys(getFolders());
+    const names = Object.keys(getFolders()).filter(n => n !== currentFolder);
     names.forEach(name => {
         const opt = document.createElement('div');
         opt.className = 'chak-folder-picker-item';
@@ -389,6 +397,7 @@ function showFolderPicker(anchorEl, presetValue, t) {
         opt.style.color = t.text;
         opt.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (currentFolder) removeFromFolder(currentFolder, presetValue);
             addToFolder(name, presetValue);
             picker.remove();
             renderPresetList();
