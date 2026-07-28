@@ -98,27 +98,20 @@ function getPresetSelector() {
 function getCurrentPresetName() { const s = getPresetSelector(); return (s && s.selectedIndex >= 0) ? s.options[s.selectedIndex].text : '(없음)'; }
 function getPresetList() {
     const s = getPresetSelector();
-    return s ? Array.from(s.options).filter(o => !o.dataset.chakClone).map(o => ({ value: o.value, name: o.text, selected: o.selected })) : [];
+    return s ? Array.from(s.options).map(o => ({ value: o.value, name: o.text, selected: o.selected })) : [];
 }
 function switchPreset(value) {
     const s = getPresetSelector(); if (!s) return;
-    // optgroup 임시 해제 → 값 변경 → 재적용
-    _applyingOptgroups = true;
-    removeOptgroups(s);
     s.value = value;
-    // jQuery 이벤트 + 네이티브 이벤트 둘 다 발동
     if (typeof $ !== 'undefined') {
         $(s).trigger('change');
     } else {
         s.dispatchEvent(new Event('change', { bubbles: true }));
     }
     setTimeout(() => {
-        applyOptgroups();
-        _applyingOptgroups = false;
-        // 연결 프로필 자동 저장
         const saveBtn = document.getElementById('update_connection_profile');
         if (saveBtn) saveBtn.click();
-    }, 400);
+    }, 300);
     renderPresetList(); updateCurrentLabel();
     showToast(s.options[s.selectedIndex]?.text ?? value);
 }
@@ -155,11 +148,11 @@ function isFavorite(v) { return getSettings().favorites.includes(v); }
 function toggleFavorite(v) {
     const s = getSettings(); const i = s.favorites.indexOf(v);
     if (i >= 0) s.favorites.splice(i, 1); else s.favorites.push(v);
-    saveSettings(); renderPresetList(); scheduleOptgroupSync();
+    saveSettings(); renderPresetList();
 }
 function getFolders() { return getSettings().folders; }
-function addFolder(name) { const s = getSettings(); if (!s.folders[name]) { s.folders[name] = []; saveSettings(); scheduleOptgroupSync(); } }
-function removeFolder(name) { delete getSettings().folders[name]; saveSettings(); scheduleOptgroupSync(); }
+function addFolder(name) { const s = getSettings(); if (!s.folders[name]) { s.folders[name] = []; saveSettings(); } }
+function removeFolder(name) { delete getSettings().folders[name]; saveSettings(); }
 function renameFolder(oldName, newName) {
     const s = getSettings();
     if (s.folders[newName]) return;
@@ -199,8 +192,8 @@ function moveFolderDown(name) {
     s.folders = newFolders;
     saveSettings();
 }
-function addToFolder(f, v) { const s = getSettings(); if (!s.folders[f]) s.folders[f] = []; if (!s.folders[f].includes(v)) { s.folders[f].push(v); saveSettings(); scheduleOptgroupSync(); } }
-function removeFromFolder(f, v) { const s = getSettings(); if (s.folders[f]) { s.folders[f] = s.folders[f].filter(x => x !== v); saveSettings(); scheduleOptgroupSync(); } }
+function addToFolder(f, v) { const s = getSettings(); if (!s.folders[f]) s.folders[f] = []; if (!s.folders[f].includes(v)) { s.folders[f].push(v); saveSettings(); } }
+function removeFromFolder(f, v) { const s = getSettings(); if (s.folders[f]) { s.folders[f] = s.folders[f].filter(x => x !== v); saveSettings(); } }
 
 // ── UI ──
 let panelEl = null, backdropEl = null, fabEl = null;
@@ -427,132 +420,14 @@ function buildSettingsUI() {
 }
 function updateVisibility() { if (fabEl) fabEl.style.display = getSettings().enabled ? '' : 'none'; if (!getSettings().enabled) closePanel(); }
 
-// ── Native preset select에 폴더 optgroup 적용 ──
-
-let optgroupApplied = false;
-
-function applyOptgroups() {
-    _applyingOptgroups = true;
-    try { _applyOptgroupsInner(); } finally { _applyingOptgroups = false; }
-}
-function _applyOptgroupsInner() {
-    const sel = getPresetSelector();
-    if (!sel) return;
-
-    const folders = getFolders();
-    const favorites = getSettings().favorites;
-    if (Object.keys(folders).length === 0 && favorites.length === 0) {
-        removeOptgroups(sel);
-        return;
-    }
-
-    const currentValue = sel.value;
-    removeOptgroups(sel);
-
-    const inFolder = new Map();
-    for (const [fname, members] of Object.entries(folders)) {
-        for (const v of members) inFolder.set(v, fname);
-    }
-
-    // 즐겨찾기 optgroup
-    const favGroup = document.createElement('optgroup');
-    favGroup.label = '⭐ 즐겨찾기';
-    favGroup.dataset.chakFolder = '__favorites__';
-
-    const folderGroups = {};
-    for (const fname of Object.keys(folders)) {
-        const grp = document.createElement('optgroup');
-        grp.label = `📁 ${fname}`;
-        grp.dataset.chakFolder = fname;
-        folderGroups[fname] = grp;
-    }
-
-    // option 분류
-    const allOptions = Array.from(sel.options);
-    const ungrouped = [];
-
-    for (const opt of allOptions) {
-        if (favorites.includes(opt.value)) {
-            const clone = opt.cloneNode(true);
-            clone.dataset.chakClone = '1';
-            favGroup.appendChild(clone);
-        }
-        const folder = inFolder.get(opt.value);
-        if (folder && folderGroups[folder]) {
-            folderGroups[folder].appendChild(opt);
-        } else {
-            ungrouped.push(opt);
-        }
-    }
-
-    // select 비우고 재구성: 즐겨찾기 → 폴더 → 미분류
-    sel.innerHTML = '';
-    if (favGroup.children.length > 0) sel.appendChild(favGroup);
-    for (const grp of Object.values(folderGroups)) {
-        if (grp.children.length > 0) sel.appendChild(grp);
-    }
-    for (const opt of ungrouped) {
-        sel.appendChild(opt);
-    }
-
-    // 선택값 복원
-    sel.value = currentValue;
-    optgroupApplied = true;
-}
-
-function removeOptgroups(sel) {
-    if (!sel) return;
-    const currentValue = sel.value;
-    const groups = sel.querySelectorAll('optgroup[data-chak-folder]');
-    for (const grp of groups) {
-        if (grp.dataset.chakFolder === '__favorites__') {
-            grp.remove();
-        } else {
-            while (grp.firstChild) {
-                sel.insertBefore(grp.firstChild, grp);
-            }
-            grp.remove();
-        }
-    }
-    sel.value = currentValue;
-    optgroupApplied = false;
-}
-
-function scheduleOptgroupSync() {
-    if (_selectFocused) return; // 피커 열려있으면 동기화 안 함
-    clearTimeout(scheduleOptgroupSync._timer);
-    scheduleOptgroupSync._timer = setTimeout(() => applyOptgroups(), 200);
-}
-
-let _applyingOptgroups = false;
-let _selectFocused = false;
-
 (function init() {
     buildSettingsUI(); buildUI(); updateVisibility();
 
-    setTimeout(() => applyOptgroups(), 500);
-
-    // select 포커스 감시 — 피커 열려있을 때 동기화 중지
-    for (const id of Object.values(SELECTOR_MAP)) {
-        const el = document.querySelector(id);
-        if (el) {
-            el.addEventListener('focus', () => { _selectFocused = true; });
-            el.addEventListener('blur', () => {
-                _selectFocused = false;
-                scheduleOptgroupSync();
-            });
-            el.addEventListener('mousedown', () => { _selectFocused = true; });
-            el.addEventListener('touchstart', () => { _selectFocused = true; }, { passive: true });
-        }
-    }
-
     const obs = new MutationObserver(() => {
-        if (_applyingOptgroups || _selectFocused) return;
         if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
             const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
             renderPresetList(q || undefined); updateCurrentLabel();
         }
-        scheduleOptgroupSync();
     });
     for (const id of Object.values(SELECTOR_MAP)) {
         const el = document.querySelector(id);
