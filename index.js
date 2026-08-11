@@ -2,6 +2,8 @@
 const extensionName = 'chak-chak';
 const settingsKey = 'chak_chak';
 
+let _lastUserSelectTouch = 0;
+
 const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true };
 
 function getSettings() {
@@ -103,6 +105,7 @@ function getPresetList() {
 function switchPreset(value) {
     const s = getPresetSelector(); if (!s) return;
     _suppressChangeToast = true;
+    _lastUserSelectTouch = Date.now();
     s.value = value;
     if (typeof $ !== 'undefined') {
         $(s).trigger('change');
@@ -120,11 +123,12 @@ function switchPreset(value) {
     setTimeout(() => { _lastPresetName = getCurrentPresetName(); _suppressChangeToast = false; }, 600);
 }
 
-function showToast(name) {
+function showToast(name, persistent) {
     document.querySelector('.chak-toast')?.remove();
     const toast = document.createElement('div');
     toast.className = 'chak-toast';
-    toast.innerHTML = `<span class="chak-toast-text">착! → ${name}</span><span class="chak-toast-close">✕</span>`;
+    const label = persistent ? `⚠️ 프리셋 자동 변경 → ${name}` : `착! → ${name}`;
+    toast.innerHTML = `<span class="chak-toast-text">${label}</span>` + (persistent ? `<span class="chak-toast-close">✕</span>` : '');
     const t = getTheme();
     toast.style.backgroundColor = t.bg;
     toast.style.color = t.text;
@@ -135,6 +139,12 @@ function showToast(name) {
     });
     document.documentElement.appendChild(toast);
     requestAnimationFrame(() => toast.classList.add('chak-toast--visible'));
+    if (!persistent) {
+        setTimeout(() => {
+            toast.classList.remove('chak-toast--visible');
+            setTimeout(() => toast.remove(), 300);
+        }, 1500);
+    }
 }
 
 // ── Favorites & Folders ──
@@ -445,8 +455,9 @@ function checkPresetChanged() {
     if (!name || name === '(없음)') return;
     if (_lastPresetName === null) { _lastPresetName = name; return; }
     if (name !== _lastPresetName) {
+        const userDriven = (Date.now() - _lastUserSelectTouch) < 5000;
         _lastPresetName = name;
-        showToast(name);
+        if (!userDriven) showToast(name, true);
         if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
             const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
             renderPresetList(q || undefined); updateCurrentLabel();
@@ -458,22 +469,18 @@ function watchPresetChanges() {
     for (const id of Object.values(SELECTOR_MAP)) {
         const el = document.querySelector(id);
         if (!el) continue;
-        el.addEventListener('change', (e) => {
-            // e.isTrusted === true면 사용자가 직접 드롭다운에서 고른 것 → 토스트 없이 기준값만 갱신
-            if (e.isTrusted) {
-                setTimeout(() => {
-                    _lastPresetName = getCurrentPresetName();
-                    if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
-                        const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
-                        renderPresetList(q || undefined); updateCurrentLabel();
-                    }
-                }, 50);
-            } else {
-                setTimeout(checkPresetChanged, 50);
-            }
+        // 사용자가 드롭다운을 직접 건드린 시점 기록
+        const mark = () => { _lastUserSelectTouch = Date.now(); };
+        el.addEventListener('pointerdown', mark);
+        el.addEventListener('mousedown', mark);
+        el.addEventListener('touchstart', mark, { passive: true });
+        el.addEventListener('focus', mark);
+        el.addEventListener('keydown', mark);
+
+        el.addEventListener('change', () => {
+            setTimeout(checkPresetChanged, 50);
         });
     }
-    // 폴링: change 이벤트 없이 자동으로 바뀌는 경우 감지
     setInterval(checkPresetChanged, 500);
 }
 
