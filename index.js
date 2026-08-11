@@ -458,9 +458,22 @@ function watchPresetChanges() {
     for (const id of Object.values(SELECTOR_MAP)) {
         const el = document.querySelector(id);
         if (!el) continue;
-        el.addEventListener('change', () => setTimeout(checkPresetChanged, 50));
+        el.addEventListener('change', (e) => {
+            // e.isTrusted === true면 사용자가 직접 드롭다운에서 고른 것 → 토스트 없이 기준값만 갱신
+            if (e.isTrusted) {
+                setTimeout(() => {
+                    _lastPresetName = getCurrentPresetName();
+                    if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
+                        const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
+                        renderPresetList(q || undefined); updateCurrentLabel();
+                    }
+                }, 50);
+            } else {
+                setTimeout(checkPresetChanged, 50);
+            }
+        });
     }
-    // 폴링: change 이벤트 없이 바뀌는 경우(연결 프로필 전환 등) 대비
+    // 폴링: change 이벤트 없이 자동으로 바뀌는 경우 감지
     setInterval(checkPresetChanged, 500);
 }
 
