@@ -104,7 +104,7 @@ function getPresetList() {
 }
 function switchPreset(value) {
     const s = getPresetSelector(); if (!s) return;
-    _suppressChangeToast = true;
+    _suppressChangeToast = Date.now();
     _lastUserSelectTouch = Date.now();
     s.value = value;
     if (typeof $ !== 'undefined') {
@@ -119,8 +119,7 @@ function switchPreset(value) {
     renderPresetList(); updateCurrentLabel();
     const name = s.options[s.selectedIndex]?.text ?? value;
     showToast(name);
-    // 자동 감지가 중복 토스트 안 띄우도록 기준값 갱신
-    setTimeout(() => { _lastPresetName = getCurrentPresetName(); _suppressChangeToast = false; }, 600);
+    setTimeout(() => { _lastPresetName = getCurrentPresetName(); }, 600);
 }
 
 function showToast(name, persistent) {
@@ -447,15 +446,15 @@ function buildSettingsUI() {
 function updateVisibility() { if (fabEl) fabEl.style.display = getSettings().enabled ? '' : 'none'; if (!getSettings().enabled) closePanel(); }
 
 let _lastPresetName = null;
-let _suppressChangeToast = false;
+let _suppressChangeToast = 0;
 
 function checkPresetChanged() {
-    if (_suppressChangeToast) return;
+    if (Date.now() - _suppressChangeToast < 1500) return;
     const name = getCurrentPresetName();
     if (!name || name === '(없음)') return;
     if (_lastPresetName === null) { _lastPresetName = name; return; }
     if (name !== _lastPresetName) {
-        const userDriven = (Date.now() - _lastUserSelectTouch) < 5000;
+        const userDriven = (Date.now() - _lastUserSelectTouch) < 2500;
         _lastPresetName = name;
         if (!userDriven) showToast(name, true);
         if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
@@ -469,20 +468,27 @@ function watchPresetChanges() {
     for (const id of Object.values(SELECTOR_MAP)) {
         const el = document.querySelector(id);
         if (!el) continue;
-        // 사용자가 드롭다운을 직접 건드린 시점 기록
+        // 사용자가 드롭다운을 직접 건드린 시점 기록 (focus는 제외 — ST가 프로그래밍적으로 포커스 줄 수 있음)
         const mark = () => { _lastUserSelectTouch = Date.now(); };
         el.addEventListener('pointerdown', mark);
         el.addEventListener('mousedown', mark);
         el.addEventListener('touchstart', mark, { passive: true });
-        el.addEventListener('focus', mark);
         el.addEventListener('keydown', mark);
 
         el.addEventListener('change', () => {
             setTimeout(checkPresetChanged, 50);
         });
     }
-    setInterval(checkPresetChanged, 500);
+    setInterval(checkPresetChanged, 300);
 }
+
+// 디버그용 — 콘솔에서 실행
+window.chakTest = () => showToast('테스트 프리셋', true);
+window.chakStatus = () => ({
+    lastPresetName: _lastPresetName,
+    currentName: getCurrentPresetName(),
+    msSinceUserTouch: Date.now() - _lastUserSelectTouch,
+});
 
 (function init() {
     buildSettingsUI(); buildUI(); updateVisibility();
