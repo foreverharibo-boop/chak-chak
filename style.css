@@ -124,13 +124,17 @@
     position: fixed; bottom: 80px; left: 50%;
     transform: translateX(-50%) translateY(8px);
     z-index: 100000;
-    padding: 6px 16px; border-radius: 16px; border: 1px solid;
+    padding: 8px 14px; border-radius: 16px; border: 1px solid;
     font-size: 12px; font-weight: 600;
     opacity: 0; transition: opacity 0.2s, transform 0.2s;
-    pointer-events: none; white-space: nowrap;
+    cursor: pointer; white-space: nowrap;
     text-shadow: none !important;
+    display: flex; align-items: center; gap: 10px;
+    -webkit-tap-highlight-color: transparent;
 }
 .chak-toast--visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+.chak-toast-close { font-size: 11px; opacity: 0.5; }
+.chak-toast:hover .chak-toast-close { opacity: 1; }
 
 .chak-settings .checkbox_label { margin: 8px 0; }
 .chak-settings-desc { font-size: 12px; margin: 4px 0 8px; }

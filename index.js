@@ -124,14 +124,17 @@ function showToast(name) {
     document.querySelector('.chak-toast')?.remove();
     const toast = document.createElement('div');
     toast.className = 'chak-toast';
-    toast.textContent = `착! → ${name}`;
+    toast.innerHTML = `<span class="chak-toast-text">착! → ${name}</span><span class="chak-toast-close">✕</span>`;
     const t = getTheme();
     toast.style.backgroundColor = t.bg;
     toast.style.color = t.text;
     toast.style.borderColor = t.border;
+    toast.addEventListener('click', () => {
+        toast.classList.remove('chak-toast--visible');
+        setTimeout(() => toast.remove(), 300);
+    });
     document.documentElement.appendChild(toast);
     requestAnimationFrame(() => toast.classList.add('chak-toast--visible'));
-    setTimeout(() => { toast.classList.remove('chak-toast--visible'); setTimeout(() => toast.remove(), 300); }, 1500);
 }
 
 // ── Favorites & Folders ──
@@ -458,13 +461,14 @@ function watchPresetChanges() {
         el.addEventListener('change', () => setTimeout(checkPresetChanged, 50));
     }
     // 폴링: change 이벤트 없이 바뀌는 경우(연결 프로필 전환 등) 대비
-    setInterval(checkPresetChanged, 1000);
+    setInterval(checkPresetChanged, 500);
 }
 
 (function init() {
     buildSettingsUI(); buildUI(); updateVisibility();
 
-    _lastPresetName = getCurrentPresetName();
+    _lastPresetName = null;
+    setTimeout(() => { _lastPresetName = getCurrentPresetName(); }, 1500);
     watchPresetChanges();
 
     const obs = new MutationObserver(() => {
