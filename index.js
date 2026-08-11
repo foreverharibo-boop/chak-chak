@@ -3,6 +3,8 @@ const extensionName = 'chak-chak';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
+let _lastTouchSource = 'none';
+let _lastDecision = null;
 
 const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true };
 
@@ -106,6 +108,7 @@ function switchPreset(value) {
     const s = getPresetSelector(); if (!s) return;
     _suppressChangeToast = Date.now();
     _lastUserSelectTouch = Date.now();
+    _lastTouchSource = 'chak-panel';
     s.value = value;
     if (typeof $ !== 'undefined') {
         $(s).trigger('change');
@@ -454,7 +457,13 @@ function checkPresetChanged() {
     if (!name || name === '(없음)') return;
     if (_lastPresetName === null) { _lastPresetName = name; return; }
     if (name !== _lastPresetName) {
-        const userDriven = (Date.now() - _lastUserSelectTouch) < 2500;
+        const gap = Date.now() - _lastUserSelectTouch;
+        const userDriven = gap < 1500;
+        _lastDecision = {
+            from: _lastPresetName, to: name,
+            gapMs: gap, source: _lastTouchSource,
+            toastShown: !userDriven, at: new Date().toLocaleTimeString(),
+        };
         _lastPresetName = name;
         if (!userDriven) showToast(name, true);
         if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
@@ -468,8 +477,13 @@ function watchPresetChanges() {
     for (const id of Object.values(SELECTOR_MAP)) {
         const el = document.querySelector(id);
         if (!el) continue;
-        // 사용자가 드롭다운을 직접 건드린 시점 기록 (focus는 제외 — ST가 프로그래밍적으로 포커스 줄 수 있음)
-        const mark = () => { _lastUserSelectTouch = Date.now(); };
+        // 진짜 사용자 조작만 기록 (isTrusted=false는 스크립트가 만든 가짜 이벤트)
+        const mark = (e) => {
+            if (!e || e.isTrusted) {
+                _lastUserSelectTouch = Date.now();
+                _lastTouchSource = e ? e.type : 'manual';
+            }
+        };
         el.addEventListener('pointerdown', mark);
         el.addEventListener('mousedown', mark);
         el.addEventListener('touchstart', mark, { passive: true });
@@ -488,6 +502,8 @@ window.chakStatus = () => ({
     lastPresetName: _lastPresetName,
     currentName: getCurrentPresetName(),
     msSinceUserTouch: Date.now() - _lastUserSelectTouch,
+    lastTouchSource: _lastTouchSource,
+    lastDecision: _lastDecision,
 });
 
 (function init() {
