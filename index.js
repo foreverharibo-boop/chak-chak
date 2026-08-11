@@ -102,6 +102,7 @@ function getPresetList() {
 }
 function switchPreset(value) {
     const s = getPresetSelector(); if (!s) return;
+    _suppressChangeToast = true;
     s.value = value;
     if (typeof $ !== 'undefined') {
         $(s).trigger('change');
@@ -113,7 +114,10 @@ function switchPreset(value) {
         if (saveBtn) saveBtn.click();
     }, 300);
     renderPresetList(); updateCurrentLabel();
-    showToast(s.options[s.selectedIndex]?.text ?? value);
+    const name = s.options[s.selectedIndex]?.text ?? value;
+    showToast(name);
+    // 자동 감지가 중복 토스트 안 띄우도록 기준값 갱신
+    setTimeout(() => { _lastPresetName = getCurrentPresetName(); _suppressChangeToast = false; }, 600);
 }
 
 function showToast(name) {
@@ -429,8 +433,39 @@ function buildSettingsUI() {
 }
 function updateVisibility() { if (fabEl) fabEl.style.display = getSettings().enabled ? '' : 'none'; if (!getSettings().enabled) closePanel(); }
 
+let _lastPresetName = null;
+let _suppressChangeToast = false;
+
+function checkPresetChanged() {
+    if (_suppressChangeToast) return;
+    const name = getCurrentPresetName();
+    if (!name || name === '(없음)') return;
+    if (_lastPresetName === null) { _lastPresetName = name; return; }
+    if (name !== _lastPresetName) {
+        _lastPresetName = name;
+        showToast(name);
+        if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
+            const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
+            renderPresetList(q || undefined); updateCurrentLabel();
+        }
+    }
+}
+
+function watchPresetChanges() {
+    for (const id of Object.values(SELECTOR_MAP)) {
+        const el = document.querySelector(id);
+        if (!el) continue;
+        el.addEventListener('change', () => setTimeout(checkPresetChanged, 50));
+    }
+    // 폴링: change 이벤트 없이 바뀌는 경우(연결 프로필 전환 등) 대비
+    setInterval(checkPresetChanged, 1000);
+}
+
 (function init() {
     buildSettingsUI(); buildUI(); updateVisibility();
+
+    _lastPresetName = getCurrentPresetName();
+    watchPresetChanges();
 
     const obs = new MutationObserver(() => {
         if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
