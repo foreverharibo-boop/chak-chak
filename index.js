@@ -103,7 +103,13 @@ const SELECTOR_MAP = {
     novel: '#settings_preset_novel',
     kobold: '#settings_preset',
 };
-function getMainApi() { return window.main_api ?? document.getElementById('main_api')?.value ?? 'openai'; }
+function getMainApi() {
+    try {
+        const m = SillyTavern.getContext()?.mainApi;
+        if (m) return m;
+    } catch (e) { /* noop */ }
+    return window.main_api ?? document.getElementById('main_api')?.value ?? 'openai';
+}
 function getPresetSelector() {
     const id = SELECTOR_MAP[getMainApi()];
     if (id) { const el = document.querySelector(id); if (el) return el; }
@@ -176,20 +182,27 @@ function getProfileRecord(key) {
     } catch (e) { return null; }
 }
 
-// 'cc' = Chat Completion, 'tc' = Text Completion (connection-manager 기준)
-function getCurrentMode() { return getMainApi() === 'openai' ? 'cc' : 'tc'; }
+// 프리셋 이름이 지금 API의 프리셋 목록에 실제로 있는지 (ST findPreset 과 같은 방식: option 텍스트 비교)
+function findPresetByName(name) {
+    const want = String(name).trim();
+    const list = getPresetList();
+    return list.find(p => p.name === want)
+        || list.find(p => p.name.trim() === want)
+        || list.find(p => p.name.trim().toLowerCase() === want.toLowerCase())
+        || null;
+}
 
-// 프로필이 실제로 프리셋을 들고 있는지 + 왜 없는지
+// 프로필이 실제로 프리셋을 넘겨줄 수 있는지 + 안 되면 왜
 function inspectProfilePreset(key) {
     const rec = getProfileRecord(key);
     if (!rec) return { ok: false, reason: '프로필을 찾을 수 없어요' };
     if (Array.isArray(rec.exclude) && rec.exclude.includes('preset'))
-        return { ok: false, reason: '이 프로필은 프리셋을 저장하지 않도록 설정돼 있어요', rec };
+        return { ok: false, reason: '프리셋을 저장하지 않는 프로필', rec };
     const name = typeof rec.preset === 'string' ? rec.preset.trim() : '';
     if (!name || name === '<None>' || name === '<Empty>')
-        return { ok: false, reason: '이 프로필에 저장된 프리셋이 없어요', rec };
-    if (rec.mode && rec.mode !== getCurrentMode())
-        return { ok: false, reason: `다른 API 계열(${rec.mode}) 프로필이라 프리셋만 가져올 수 없어요`, rec, name };
+        return { ok: false, reason: '저장된 프리셋 없음', rec };
+    if (!findPresetByName(name))
+        return { ok: false, reason: `현재 목록에 "${name}" 없음`, rec, name };
     return { ok: true, name, rec };
 }
 
@@ -663,33 +676,28 @@ function openProfileDropdown() {
         dropdownEl.appendChild(empty);
     }
     profiles.forEach(p => {
+        const info = inspectProfilePreset(p.value);
+
         const item = document.createElement('div');
-        item.className = 'chak-item' + (p.selected ? ' chak-item--active' : '');
-        const nm = document.createElement('span');
-        nm.className = 'chak-item-name';
+        item.className = 'chak-prof' + (p.selected ? ' chak-prof--active' : '') + (info.ok ? '' : ' chak-prof--off');
+
+        const nm = document.createElement('div');
+        nm.className = 'chak-prof-name';
         nm.textContent = p.name;
         nm.style.color = p.selected ? t.accent : t.text;
         item.appendChild(nm);
 
-        const tag = document.createElement('span');
-        tag.className = 'chak-dd-tag';
-        const info = inspectProfilePreset(p.value);
-        tag.textContent = info.ok ? info.name : '—';
-        tag.style.color = t.text;
-        if (!info.ok) item.classList.add('chak-item--muted');
-        item.appendChild(tag);
+        const sub = document.createElement('div');
+        sub.className = 'chak-prof-sub';
+        sub.textContent = info.ok ? info.name : info.reason;
+        sub.style.color = info.ok ? t.text : WARN_COLOR;
+        item.appendChild(sub);
 
         item.title = info.ok
             ? `프리셋 "${info.name}" 만 적용 (ST 연결 프로필은 그대로)`
             : info.reason;
         item.addEventListener('click', () => {
-            if (!info.ok) {
-                tag.textContent = info.reason;
-                tag.style.color = WARN_COLOR;
-                tag.style.maxWidth = '72%';
-                tag.style.whiteSpace = 'normal';
-                return;   // 드롭다운은 열어둔다
-            }
+            if (!info.ok) return;
             applyProfilePreset(p.value);
             closeDropdown();
         });
@@ -701,7 +709,7 @@ function openProfileDropdown() {
     panelEl.appendChild(dropdownEl);
     dropdownEl.style.top = (bar.offsetTop + bar.offsetHeight + 2) + 'px';
     dropdownEl.style.left = chip.offsetLeft + 'px';
-    dropdownEl.style.width = Math.max(chip.offsetWidth, 150) + 'px';
+    dropdownEl.style.width = Math.min(panelEl.clientWidth - 20, Math.max(chip.offsetWidth, 220)) + 'px';
     dropdownEl.style.maxHeight = Math.max(140, panelEl.clientHeight - bar.offsetTop - bar.offsetHeight - 16) + 'px';
 
     _ddOpen = true;

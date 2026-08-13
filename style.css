@@ -217,9 +217,29 @@
 .chak-settings-hr { border: none; border-top: 1px solid rgba(128,128,128,0.3); margin: 10px 0; }
 .chak-settings-range { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 8px 0; }
 .chak-settings-range input[type="range"] { flex: 1; }
-.chak-dd-tag { font-size: 10px; opacity: 0.55; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: 6px; }
-.chak-dd .chak-item { justify-content: space-between; }
-.chak-item--muted .chak-item-name { opacity: 0.45; }
+.chak-prof {
+    padding: 7px 9px;
+    margin: 1px 0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+.chak-prof:hover { background: rgba(128,128,128,0.12); }
+.chak-prof--active { background: rgba(128,128,128,0.1); }
+.chak-prof--active .chak-prof-name { font-weight: 600; }
+.chak-prof--off { cursor: default; }
+.chak-prof--off:hover { background: transparent; }
+.chak-prof--off .chak-prof-name { opacity: 0.45; }
+.chak-prof-name {
+    font-size: 13px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chak-prof-sub {
+    font-size: 10px;
+    opacity: 0.6;
+    margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .chak-toast-action {
     font-size: 11px; font-weight: 600;
     border: 1px solid; border-radius: 10px;
