@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.6.0';
+const EXT_VERSION = '1.6.1';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -130,12 +130,18 @@ function switchPreset(value) {
     _suppressChangeToast = Date.now();
     _lastUserSelectTouch = Date.now();
     _lastTouchSource = 'chak-panel';
-    s.value = value;
-    if (typeof $ !== 'undefined') {
-        $(s).trigger('change');
-    } else {
-        s.dispatchEvent(new Event('change', { bubbles: true }));
+    try {
+        s.value = value;
+        if (typeof $ !== 'undefined') {
+            $(s).trigger('change');
+        } else {
+            s.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    } catch (e) {
+        dlog('❌ trigger 중 예외:', e?.message);
     }
+    dlog('  trigger 후 현재:', `"${getCurrentPresetName()}"`);
+
     if (_skipAutoSaveOnce) {
         _skipAutoSaveOnce = false;
     } else {
@@ -144,15 +150,19 @@ function switchPreset(value) {
             if (saveBtn) saveBtn.click();
         }, 300);
     }
-    renderPresetList(); updateCurrentLabel();
-    const name = s.options[s.selectedIndex]?.text ?? value;
-    showToast(name);
+    try { renderPresetList(); updateCurrentLabel(); }
+    catch (e) { dlog('❌ 목록 갱신 중 예외:', e?.message); }
+    try {
+        const name = s.options[s.selectedIndex]?.text ?? value;
+        showToast(name);
+    } catch (e) { dlog('❌ showToast 예외:', e?.message); }
     setTimeout(() => {
         _lastPresetName = getCurrentPresetName();
         _userPreset = _lastPresetName;
         clearDrift(); refreshBar();
     }, 600);
-    refreshBar();
+    try { refreshBar(); } catch (e) { dlog('❌ refreshBar 예외:', e?.message); }
+    dlog('switchPreset 끝:', `"${getCurrentPresetName()}"`);
 }
 
 // ── Connection profiles ──
@@ -271,7 +281,6 @@ async function applyProfilePreset(key) {
     _profileSwitchUntil = Date.now() + 3000;
 
     if (hit) {
-        switchPreset(hit.value);   // 패널에서 프리셋 누르는 것과 완전히 같은 경로
         setTimeout(async () => {
             const now = getCurrentPresetName();
             dlog('적용확인:', `현재 "${now}"`, now === hit.name ? 'OK' : '불일치!');
@@ -290,6 +299,7 @@ async function applyProfilePreset(key) {
                 }
             } catch (e) { dlog('재시도 에러:', e?.message); }
         }, 350);
+        switchPreset(hit.value);   // 패널에서 프리셋 누르는 것과 완전히 같은 경로
         return;
     }
 
@@ -648,6 +658,12 @@ let _clickShieldUntil = 0;
 
 // ── 진단 로그 (설정 > 진단 로그 보기) ──
 const _diag = [];
+window.addEventListener('error', (e) => {
+    dlog('❌ JS에러:', e.message, '@', (e.filename || '').split('/').pop() + ':' + e.lineno);
+});
+window.addEventListener('unhandledrejection', (e) => {
+    dlog('❌ 프라미스 거부:', e.reason?.message || String(e.reason));
+});
 function dlog(...args) {
     const line = new Date().toLocaleTimeString() + '  ' + args.map(a => {
         if (a === undefined) return 'undefined';
