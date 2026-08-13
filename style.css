@@ -253,3 +253,42 @@
 .chak-prof-head { display: flex; align-items: center; gap: 6px; }
 .chak-prof-head .chak-prof-name { flex: 1; min-width: 0; }
 .chak-prof-badge { font-size: 9px; opacity: 0.6; border: 1px solid; border-radius: 4px; padding: 0 3px; flex: none; }
+
+/* ── 진단 로그 ── */
+#chak-diag {
+    position: fixed;
+    inset: 8vh 12px auto 12px;
+    z-index: 100000;
+    border: 1px solid;
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 70vh;
+}
+#chak-diag, #chak-diag * { text-shadow: none !important; }
+.chak-diag-head { font-size: 13px; font-weight: 600; }
+.chak-diag-body {
+    flex: 1;
+    min-height: 200px;
+    font-size: 10px;
+    font-family: monospace;
+    background: rgba(128,128,128,0.08);
+    border: none;
+    border-radius: 8px;
+    padding: 8px;
+    color: inherit;
+    resize: none;
+    white-space: pre;
+    overflow: auto;
+}
+.chak-diag-row { display: flex; gap: 8px; justify-content: flex-end; }
+.chak-diag-btn {
+    font-size: 12px;
+    border: 1px solid rgba(128,128,128,0.4);
+    border-radius: 8px;
+    padding: 5px 14px;
+    cursor: pointer;
+}
+.chak-prof--flash { background: rgba(128,128,128,0.25) !important; transition: background 0.1s; }

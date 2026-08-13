@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.5.2';
+const EXT_VERSION = '1.6.0';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -124,7 +124,9 @@ function getPresetList() {
     return s ? Array.from(s.options).map(o => ({ value: o.value, name: o.text, selected: o.selected })) : [];
 }
 function switchPreset(value) {
-    const s = getPresetSelector(); if (!s) return;
+    const s = getPresetSelector();
+    if (!s) { dlog('switchPreset: 프리셋 select 없음! api=', getMainApi()); return; }
+    dlog('switchPreset:', value);
     _suppressChangeToast = Date.now();
     _lastUserSelectTouch = Date.now();
     _lastTouchSource = 'chak-panel';
@@ -257,18 +259,37 @@ async function applyProfilePreset(key) {
 
     const before = getCurrentPresetName();
     if (normName(before) === normName(info.name)) {
+        dlog('이미 적용 중:', `"${before}"`);
         showToast(`이미 "${before}" 적용 중`);
         return;
     }
 
     const hit = findPresetByName(info.name) || findPresetLoose(info.name);
-    console.debug('[착착] borrow preset:', info.name, '→ option:', hit);
+    dlog('빌리기:', `"${info.name}"`, '옵션매칭:', hit ? `"${hit.name}"` : '실패', '이전:', `"${before}"`);
 
     _skipAutoSaveOnce = true;   // 활성 프로필에 덮어쓰지 않기
     _profileSwitchUntil = Date.now() + 3000;
 
     if (hit) {
         switchPreset(hit.value);   // 패널에서 프리셋 누르는 것과 완전히 같은 경로
+        setTimeout(async () => {
+            const now = getCurrentPresetName();
+            dlog('적용확인:', `현재 "${now}"`, now === hit.name ? 'OK' : '불일치!');
+            if (now === hit.name) return;
+            // select 직접 변경이 안 먹는 환경 → ST /preset 으로 1회 재시도
+            try {
+                const cmd = SillyTavern.getContext()?.SlashCommandParser?.commands?.['preset'];
+                if (cmd) {
+                    _suppressChangeToast = Date.now();
+                    _lastUserSelectTouch = Date.now();
+                    await cmd.callback({}, info.name);
+                    const now2 = getCurrentPresetName();
+                    dlog('재시도(/preset):', `현재 "${now2}"`, now2 === hit.name ? 'OK' : '실패');
+                    if (now2 !== hit.name) showToast(`"${info.name}" 적용 실패 — 진단 로그 확인`, true);
+                    else { showToast(now2); refreshBar(); updateCurrentLabel(); }
+                }
+            } catch (e) { dlog('재시도 에러:', e?.message); }
+        }, 350);
         return;
     }
 
@@ -436,6 +457,13 @@ function buildUI() {
         const si = panelEl.querySelector('.chak-search');
         if (si) { si.focus(); si.select(); }
     });
+    // 드롭다운이 닫힌 직후의 잔여/합성 클릭이 패널 아래 요소를 누르는 것을 차단
+    panelEl.addEventListener('click', (e) => {
+        if (Date.now() >= _clickShieldUntil) return;
+        if (e.target.closest('.chak-bar') || e.target.closest('.chak-dd')) return;
+        dlog('유령클릭 차단:', e.target.className || e.target.tagName);
+        e.stopPropagation(); e.preventDefault();
+    }, true);
 
     backdropEl.appendChild(panelEl);
     document.documentElement.appendChild(backdropEl);
@@ -571,10 +599,7 @@ function createItem(preset, t, isFav, folder) {
 
     item.appendChild(nm); item.appendChild(acts);
     item.addEventListener('click', () => {
-        if (Date.now() < _clickShieldUntil) {
-            console.debug('[착착] 유령 클릭 차단:', preset.name);
-            return;
-        }
+        dlog('프리셋 탭(패널):', preset.name);
         switchPreset(preset.value);
         closeDropdown();
     });
@@ -620,6 +645,59 @@ function showFolderPicker(anchorEl, presetValue, t, currentFolder) {
 // ── 패널 상단 프로필/프리셋 줄 ──
 let dropdownEl = null, _ddOpen = false;
 let _clickShieldUntil = 0;
+
+// ── 진단 로그 (설정 > 진단 로그 보기) ──
+const _diag = [];
+function dlog(...args) {
+    const line = new Date().toLocaleTimeString() + '  ' + args.map(a => {
+        if (a === undefined) return 'undefined';
+        if (typeof a === 'object') { try { return JSON.stringify(a); } catch (e) { return String(a); } }
+        return String(a);
+    }).join(' ');
+    _diag.push(line);
+    if (_diag.length > 40) _diag.shift();
+    console.debug('[착착]', ...args);
+}
+
+function showDiagLog() {
+    document.getElementById('chak-diag')?.remove();
+    const t = getTheme(true);
+    const box = document.createElement('div');
+    box.id = 'chak-diag';
+    box.style.backgroundColor = t.bg;
+    box.style.color = t.text;
+    box.style.borderColor = t.border;
+
+    const head = document.createElement('div');
+    head.className = 'chak-diag-head';
+    head.textContent = `착착 v${EXT_VERSION} 진단 로그 (최근 ${_diag.length}건)`;
+    box.appendChild(head);
+
+    const body = document.createElement('textarea');
+    body.className = 'chak-diag-body';
+    body.readOnly = true;
+    body.value = _diag.length ? _diag.join('\n') : '(아직 기록 없음 — 프로필/프리셋을 한번 눌러보고 다시 열어줘)';
+    box.appendChild(body);
+
+    const row = document.createElement('div');
+    row.className = 'chak-diag-row';
+    const copyBtn = document.createElement('div');
+    copyBtn.className = 'chak-diag-btn';
+    copyBtn.textContent = '복사';
+    copyBtn.addEventListener('click', () => {
+        body.select();
+        try { navigator.clipboard?.writeText(body.value); } catch (e) { document.execCommand('copy'); }
+        copyBtn.textContent = '복사됨!';
+    });
+    const closeBtn = document.createElement('div');
+    closeBtn.className = 'chak-diag-btn';
+    closeBtn.textContent = '닫기';
+    closeBtn.addEventListener('click', () => box.remove());
+    row.appendChild(copyBtn); row.appendChild(closeBtn);
+    box.appendChild(row);
+
+    document.documentElement.appendChild(box);
+}
 
 function refreshBar() {
     if (!panelEl) return;
@@ -735,13 +813,13 @@ function openProfileDropdown() {
 
         const onPick = (ev) => {
             ev.preventDefault(); ev.stopPropagation();
-            console.debug('[착착] profile row picked:', ev.type, p.name, info);
+            dlog('프로필 탭:', p.name, info.ok ? `→ "${info.name}"` : `불가(${info.reason})`);
+            item.classList.add('chak-prof--flash');
             if (!info.ok) {
                 sub.style.whiteSpace = 'normal';
                 sub.style.opacity = '1';
                 return;
             }
-            // 클릭이 닿았다는 걸 먼저 눈으로 보여준다 (프리셋 적용 성패와 무관)
             setActiveProfileId(p.value);
             refreshBar();
             applyProfilePreset(p.value);
@@ -778,6 +856,7 @@ function buildSettingsUI() {
             <input type="range" id="chak_drift_delay" min="1" max="30" step="1" />
             <span id="chak_drift_delay_out"></span>
         </label>
+        <div class="menu_button" id="chak_diag_btn" style="margin: 6px 0;">🔍 진단 로그 보기</div>
         <hr class="chak-settings-hr" />
         <label class="checkbox_label"><input type="checkbox" id="chak_tb_enabled" /><span>프로필/프리셋 줄 표시</span></label>
         <p class="chak-settings-desc">착착 패널의 "현재:" 바로 위에 [연결 프로필][프리셋] 한 줄을 띄웁니다.</p>
@@ -817,6 +896,7 @@ function buildSettingsUI() {
     bind('chak_tb_preset', () => s.topbar.showPreset, v => s.topbar.showPreset = v);
     bind('chak_tb_icons', () => s.topbar.icons, v => s.topbar.icons = v);
     bind('chak_tb_ratio', () => s.topbar.presetRatio, v => s.topbar.presetRatio = v);
+    document.getElementById('chak_diag_btn')?.addEventListener('click', showDiagLog);
 }
 
 function updateVisibility() {
