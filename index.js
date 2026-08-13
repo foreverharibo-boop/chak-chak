@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.6.2';
+const EXT_VERSION = '1.6.3';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -144,11 +144,9 @@ function switchPreset(value) {
 
     if (_skipAutoSaveOnce) {
         _skipAutoSaveOnce = false;
+        dlog('프로필 프리셋 저장 건너뜀: 프로필에 저장된 프리셋 불러오기 중');
     } else {
-        setTimeout(() => {
-            const saveBtn = document.getElementById('update_connection_profile');
-            if (saveBtn) saveBtn.click();
-        }, 300);
+        savePresetToActiveProfile(getCurrentPresetName());
     }
     try { renderPresetList(); updateCurrentLabel(); }
     catch (e) { dlog('❌ 목록 갱신 중 예외:', e?.message); }
@@ -214,6 +212,41 @@ function getProfileRecord(key) {
         if (!Array.isArray(list)) return null;
         return list.find(p => p?.id === key) || list.find(p => p?.name === key) || null;
     } catch (e) { return null; }
+}
+
+// 착착 상단에서 고른 프로필에 프리셋 이름만 저장한다.
+// ST의 업데이트 버튼은 #connection_profiles에서 선택된 프로필 전체를 갱신하므로,
+// 착착의 activeProfileId와 ST 선택값이 다르면 엉뚱한 프로필을 바꿀 수 있다.
+function savePresetToActiveProfile(presetName) {
+    const profileId = getActiveProfileId();
+    const rec = profileId ? getProfileRecord(profileId) : null;
+    if (!rec) {
+        dlog('프로필 프리셋 저장 안 함: 선택된 연결 프로필 없음');
+        return false;
+    }
+    if (Array.isArray(rec.exclude) && rec.exclude.includes('preset')) {
+        dlog('프로필 프리셋 저장 안 함:', `"${rec.name}"`, '프리셋 저장 제외 상태');
+        return false;
+    }
+
+    const name = String(presetName ?? '').trim();
+    if (!name || name === '(없음)') {
+        dlog('프로필 프리셋 저장 실패:', `"${rec.name}"`, '유효한 프리셋 이름 없음');
+        return false;
+    }
+
+    const before = typeof rec.preset === 'string' ? rec.preset : '';
+    rec.preset = name;
+    saveSettings();
+
+    const saved = getProfileRecord(profileId)?.preset;
+    const ok = normName(saved) === normName(name);
+    dlog(
+        ok ? '프로필 프리셋 저장 완료:' : '프로필 프리셋 저장 실패:',
+        `"${rec.name}"`,
+        `"${before || '(없음)'}" → "${name}"`,
+    );
+    return ok;
 }
 
 // 프리셋 이름이 지금 API의 프리셋 목록에 실제로 있는지 (ST findPreset 과 같은 방식: option 텍스트 비교)
