@@ -1,5 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
+const EXT_VERSION = '1.4.2';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -183,16 +184,25 @@ function getProfileRecord(key) {
 }
 
 // 프리셋 이름이 지금 API의 프리셋 목록에 실제로 있는지 (ST findPreset 과 같은 방식: option 텍스트 비교)
-function findPresetByName(name) {
-    const want = String(name).trim();
-    const list = getPresetList();
-    return list.find(p => p.name === want)
-        || list.find(p => p.name.trim() === want)
-        || list.find(p => p.name.trim().toLowerCase() === want.toLowerCase())
-        || null;
+// 이모지 variation selector / ZWJ / 공백 차이를 흡수한 비교
+function normName(x) {
+    return String(x ?? '')
+        .normalize('NFC')
+        .replace(/[\uFE0E\uFE0F\u200D]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
 }
 
-// 프로필이 실제로 프리셋을 넘겨줄 수 있는지 + 안 되면 왜
+function findPresetByName(name) {
+    const want = normName(name);
+    if (!want) return null;
+    const list = getPresetList();
+    return list.find(p => normName(p.name) === want) || null;
+}
+
+// 프로필이 프리셋 이름을 들고 있는지만 본다.
+// 실제 매칭은 ST 의 /preset (정확일치 → Fuse 퍼지) 에 맡긴다.
 function inspectProfilePreset(key) {
     const rec = getProfileRecord(key);
     if (!rec) return { ok: false, reason: '프로필을 찾을 수 없어요' };
@@ -201,23 +211,25 @@ function inspectProfilePreset(key) {
     const name = typeof rec.preset === 'string' ? rec.preset.trim() : '';
     if (!name || name === '<None>' || name === '<Empty>')
         return { ok: false, reason: '저장된 프리셋 없음', rec };
-    if (!findPresetByName(name))
-        return { ok: false, reason: `현재 목록에 "${name}" 없음`, rec, name };
-    return { ok: true, name, rec };
+    return { ok: true, name, rec, exact: !!findPresetByName(name) };
 }
 
 function getProfilePresetName(key) {
-    const rec = getProfileRecord(key);
-    if (!rec) return null;
-    if (Array.isArray(rec.exclude) && rec.exclude.includes('preset')) return null;
-    const n = typeof rec.preset === 'string' ? rec.preset.trim() : '';
-    return (!n || n === '<None>' || n === '<Empty>') ? null : n;
+    const i = inspectProfilePreset(key);
+    return i.ok ? i.name : null;
 }
 
 // 프로필의 프리셋만 빌려온다 — #connection_profiles 선택은 절대 건드리지 않음
 async function applyProfilePreset(key) {
     const info = inspectProfilePreset(key);
+    console.debug('[착착] applyProfilePreset', key, info);
     if (!info.ok) { showToast(info.reason, true); return; }
+
+    const before = getCurrentPresetName();
+    if (normName(before) === normName(info.name)) {
+        showToast(`이미 "${before}" 적용 중`);
+        return;
+    }
 
     _suppressChangeToast = Date.now();
     _lastUserSelectTouch = Date.now();
@@ -225,13 +237,11 @@ async function applyProfilePreset(key) {
     _profileSwitchUntil = Date.now() + 3000;
 
     try {
-        // ST가 프로필을 적용할 때 쓰는 것과 같은 경로 (정확 일치 → 퍼지 매칭)
         const cmd = SillyTavern.getContext()?.SlashCommandParser?.commands?.['preset'];
         if (cmd) {
-            const applied = await cmd.callback({}, info.name);
-            showToast(applied || info.name);
+            await cmd.callback({}, info.name);
         } else {
-            const hit = getPresetList().find(p => p.name.trim() === info.name);
+            const hit = findPresetByName(info.name);
             if (!hit) { showToast(`프리셋 "${info.name}" 을(를) 못 찾음`, true); return; }
             _skipAutoSaveOnce = true;
             switchPreset(hit.value);
@@ -243,56 +253,18 @@ async function applyProfilePreset(key) {
         return;
     }
 
+    const after = getCurrentPresetName();
+    if (normName(after) !== normName(before)) {
+        showToast(after);
+    } else {
+        showToast(`"${info.name}" 을(를) 적용하지 못했어요`, true);
+    }
+
     [200, 700, 1500].forEach(ms => setTimeout(() => {
         _lastPresetName = getCurrentPresetName();
         _userPreset = _lastPresetName;
         clearDrift(); refreshBar(); updateCurrentLabel();
     }, ms));
-}
-
-function showToast(name, persistent, action) {
-    document.querySelector('.chak-toast')?.remove();
-    const toast = document.createElement('div');
-    toast.className = 'chak-toast' + (persistent ? ' chak-toast--warn' : '');
-    const label = persistent ? `⚠️ ${name}` : `착! → ${name}`;
-
-    const text = document.createElement('span');
-    text.className = 'chak-toast-text';
-    text.textContent = label;
-    toast.appendChild(text);
-
-    const t = getTheme();
-    toast.style.backgroundColor = t.bg;
-    toast.style.color = persistent ? WARN_COLOR : t.text;
-    toast.style.borderColor = persistent ? WARN_COLOR : t.border;
-
-    const dismiss = () => {
-        toast.classList.remove('chak-toast--visible');
-        setTimeout(() => toast.remove(), 300);
-    };
-
-    if (action) {
-        const btn = document.createElement('span');
-        btn.className = 'chak-toast-action';
-        btn.textContent = action.label;
-        btn.style.borderColor = WARN_COLOR;
-        btn.addEventListener('click', (e) => { e.stopPropagation(); dismiss(); action.onClick(); });
-        toast.appendChild(btn);
-    }
-    if (persistent) {
-        const close = document.createElement('span');
-        close.className = 'chak-toast-close';
-        close.textContent = '✕';
-        toast.appendChild(close);
-    }
-    toast.addEventListener('click', dismiss);
-
-    try { document.documentElement.appendChild(toast); } catch (e) { /* noop */ }
-    if (!toast.isConnected) document.body.appendChild(toast);
-    console.debug('[착착] toast:', label, 'connected =', toast.isConnected);
-
-    requestAnimationFrame(() => toast.classList.add('chak-toast--visible'));
-    if (!persistent) setTimeout(dismiss, 1500);
 }
 
 // ── Favorites & Folders ──
@@ -697,7 +669,13 @@ function openProfileDropdown() {
             ? `프리셋 "${info.name}" 만 적용 (ST 연결 프로필은 그대로)`
             : info.reason;
         item.addEventListener('click', () => {
-            if (!info.ok) return;
+            console.debug('[착착] profile row clicked:', p.name, info);
+            if (!info.ok) {
+                // 눌러도 죽어있지 않게 — 전체 사유를 펼쳐서 보여준다
+                sub.style.whiteSpace = 'normal';
+                sub.style.opacity = '1';
+                return;
+            }
             applyProfilePreset(p.value);
             closeDropdown();
         });
@@ -719,7 +697,7 @@ function openProfileDropdown() {
 // ── Settings ──
 function buildSettingsUI() {
     const html = `<div class="chak-settings"><div class="inline-drawer">
-        <div class="inline-drawer-toggle inline-drawer-header"><b>착착 ⚡ Chak-Chak</b>
+        <div class="inline-drawer-toggle inline-drawer-header"><b>착착 ⚡ Chak-Chak</b><span class="chak-ver">v${EXT_VERSION}</span>
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
         <div class="inline-drawer-content">
         <label class="checkbox_label"><input type="checkbox" id="chak_enabled" /><span>활성화</span></label>

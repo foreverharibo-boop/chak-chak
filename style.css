@@ -248,3 +248,5 @@
 .chak-toast--warn { max-width: calc(100vw - 32px); white-space: normal; }
 .chak-toast--warn .chak-toast-text { flex: 1; min-width: 0; }
 .chak-chip--warn { background: rgba(224,160,48,0.12); }
+.chak-ver { font-size: 10px; opacity: 0.5; margin-left: 6px; font-weight: 400; }
+.chak-prof-sub { max-height: 4.5em; }
