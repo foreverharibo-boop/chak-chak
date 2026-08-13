@@ -5,9 +5,10 @@ const settingsKey = 'chak_chak';
 let _lastUserSelectTouch = 0;
 let _lastTouchSource = 'none';
 let _lastDecision = null;
+const WARN_COLOR = '#e0a030';
 
 const defaultTopbar = { enabled: true, showProfile: true, showPreset: true, icons: true, presetRatio: 1.3 };
-const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true, showFab: true, topbar: structuredClone(defaultTopbar) };
+const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true, showFab: true, driftWarn: true, driftDelaySec: 3, topbar: structuredClone(defaultTopbar) };
 
 function getSettings() {
     const ctx = SillyTavern.getContext();
@@ -18,6 +19,8 @@ function getSettings() {
     if (!s.recentPresets) s.recentPresets = [];
     if (s.recentOpen === undefined) s.recentOpen = true;
     if (s.showFab === undefined) s.showFab = true;
+    if (s.driftWarn === undefined) s.driftWarn = true;
+    if (s.driftDelaySec === undefined) s.driftDelaySec = 3;
     if (!s.topbar) s.topbar = structuredClone(defaultTopbar);
     delete s.topbar.autoSaveProfile;
     delete s.autoSaveProfile;
@@ -134,7 +137,11 @@ function switchPreset(value) {
     renderPresetList(); updateCurrentLabel();
     const name = s.options[s.selectedIndex]?.text ?? value;
     showToast(name);
-    setTimeout(() => { _lastPresetName = getCurrentPresetName(); }, 600);
+    setTimeout(() => {
+        _lastPresetName = getCurrentPresetName();
+        _userPreset = _lastPresetName;
+        clearDrift(); refreshBar();
+    }, 600);
     refreshBar();
 }
 
@@ -224,9 +231,55 @@ async function applyProfilePreset(key) {
     }
 
     [200, 700, 1500].forEach(ms => setTimeout(() => {
-        refreshBar(); updateCurrentLabel();
         _lastPresetName = getCurrentPresetName();
+        _userPreset = _lastPresetName;
+        clearDrift(); refreshBar(); updateCurrentLabel();
     }, ms));
+}
+
+function showToast(name, persistent, action) {
+    document.querySelector('.chak-toast')?.remove();
+    const toast = document.createElement('div');
+    toast.className = 'chak-toast' + (persistent ? ' chak-toast--warn' : '');
+    const label = persistent ? `⚠️ ${name}` : `착! → ${name}`;
+
+    const text = document.createElement('span');
+    text.className = 'chak-toast-text';
+    text.textContent = label;
+    toast.appendChild(text);
+
+    const t = getTheme();
+    toast.style.backgroundColor = t.bg;
+    toast.style.color = persistent ? WARN_COLOR : t.text;
+    toast.style.borderColor = persistent ? WARN_COLOR : t.border;
+
+    const dismiss = () => {
+        toast.classList.remove('chak-toast--visible');
+        setTimeout(() => toast.remove(), 300);
+    };
+
+    if (action) {
+        const btn = document.createElement('span');
+        btn.className = 'chak-toast-action';
+        btn.textContent = action.label;
+        btn.style.borderColor = WARN_COLOR;
+        btn.addEventListener('click', (e) => { e.stopPropagation(); dismiss(); action.onClick(); });
+        toast.appendChild(btn);
+    }
+    if (persistent) {
+        const close = document.createElement('span');
+        close.className = 'chak-toast-close';
+        close.textContent = '✕';
+        toast.appendChild(close);
+    }
+    toast.addEventListener('click', dismiss);
+
+    try { document.documentElement.appendChild(toast); } catch (e) { /* noop */ }
+    if (!toast.isConnected) document.body.appendChild(toast);
+    console.debug('[착착] toast:', label, 'connected =', toast.isConnected);
+
+    requestAnimationFrame(() => toast.classList.add('chak-toast--visible'));
+    if (!persistent) setTimeout(dismiss, 1500);
 }
 
 // ── Favorites & Folders ──
@@ -566,7 +619,12 @@ function refreshBar() {
         chip.querySelector('.chak-chip-icon').style.display = tb.icons ? '' : 'none';
     }
     pc.querySelector('.chak-chip-label').textContent = getCurrentProfileName();
-    sc.querySelector('.chak-chip-label').textContent = getCurrentPresetName();
+    const cur = getCurrentPresetName();
+    const drift = getSettings().driftWarn && isDrifted();
+    sc.querySelector('.chak-chip-label').textContent = (drift ? '⚠ ' : '') + cur;
+    sc.classList.toggle('chak-chip--warn', !!drift);
+    if (drift) { sc.style.borderColor = WARN_COLOR; sc.style.color = WARN_COLOR; }
+    sc.title = drift ? `원래 고른 프리셋: ${_userPreset} — 눌러서 검색, 토스트의 되돌리기로 복구` : '';
     pc.querySelector('.chak-chip-caret').textContent = _ddOpen ? '▴' : '▾';
 
     pc.classList.toggle('chak-chip--open', _ddOpen);
@@ -624,7 +682,17 @@ function openProfileDropdown() {
         item.title = info.ok
             ? `프리셋 "${info.name}" 만 적용 (ST 연결 프로필은 그대로)`
             : info.reason;
-        item.addEventListener('click', () => { applyProfilePreset(p.value); closeDropdown(); });
+        item.addEventListener('click', () => {
+            if (!info.ok) {
+                tag.textContent = info.reason;
+                tag.style.color = WARN_COLOR;
+                tag.style.maxWidth = '72%';
+                tag.style.whiteSpace = 'normal';
+                return;   // 드롭다운은 열어둔다
+            }
+            applyProfilePreset(p.value);
+            closeDropdown();
+        });
         dropdownEl.appendChild(item);
     });
 
@@ -648,6 +716,12 @@ function buildSettingsUI() {
         <div class="inline-drawer-content">
         <label class="checkbox_label"><input type="checkbox" id="chak_enabled" /><span>활성화</span></label>
         <label class="checkbox_label"><input type="checkbox" id="chak_show_fab" /><span>입력창 ⚡ 버튼 표시</span></label>
+        <label class="checkbox_label"><input type="checkbox" id="chak_drift" /><span>프리셋 이탈 경고</span></label>
+        <p class="chak-settings-desc">다른 확장이 프리셋을 바꿔놓고 안 되돌리면 경고 + 되돌리기 버튼을 띄웁니다.</p>
+        <label class="chak-settings-range"><span>경고까지 대기</span>
+            <input type="range" id="chak_drift_delay" min="1" max="30" step="1" />
+            <span id="chak_drift_delay_out"></span>
+        </label>
         <hr class="chak-settings-hr" />
         <label class="checkbox_label"><input type="checkbox" id="chak_tb_enabled" /><span>프로필/프리셋 줄 표시</span></label>
         <p class="chak-settings-desc">착착 패널의 "현재:" 바로 위에 [연결 프로필][프리셋] 한 줄을 띄웁니다.</p>
@@ -676,6 +750,12 @@ function buildSettingsUI() {
 
     bind('chak_enabled', () => s.enabled, v => s.enabled = v);
     bind('chak_show_fab', () => s.showFab, v => s.showFab = v);
+    bind('chak_drift', () => s.driftWarn, v => { s.driftWarn = v; clearDrift(); });
+    bind('chak_drift_delay', () => s.driftDelaySec, v => { s.driftDelaySec = v; clearDrift(); });
+    const dOut = document.getElementById('chak_drift_delay_out');
+    const dRange = document.getElementById('chak_drift_delay');
+    const syncOut = () => { if (dOut && dRange) dOut.textContent = dRange.value + '초'; };
+    syncOut(); dRange?.addEventListener('input', syncOut);
     bind('chak_tb_enabled', () => s.topbar.enabled, v => s.topbar.enabled = v);
     bind('chak_tb_profile', () => s.topbar.showProfile, v => s.topbar.showProfile = v);
     bind('chak_tb_preset', () => s.topbar.showPreset, v => s.topbar.showPreset = v);
@@ -694,29 +774,65 @@ function updateVisibility() {
 
 let _lastPresetName = null;
 let _suppressChangeToast = 0;
+let _userPreset = null;     // 사용자가 마지막으로 '의도한' 프리셋
+let _driftSince = 0;
+let _driftWarned = false;
+
+function clearDrift() { _driftSince = 0; _driftWarned = false; }
+function isDrifted() { return !!(_userPreset && getCurrentPresetName() !== _userPreset); }
 
 function checkPresetChanged() {
-    if (Date.now() < _profileSwitchUntil) { _lastPresetName = getCurrentPresetName(); return; }
-    if (Date.now() - _suppressChangeToast < 1500) return;
     const name = getCurrentPresetName();
     if (!name || name === '(없음)') return;
-    if (_lastPresetName === null) { _lastPresetName = name; return; }
+
+    if (_lastPresetName === null) { _lastPresetName = name; _userPreset = name; return; }
+
     if (name !== _lastPresetName) {
         const gap = Date.now() - _lastUserSelectTouch;
         const userDriven = gap < 1500;
         _lastDecision = {
             from: _lastPresetName, to: name,
             gapMs: gap, source: _lastTouchSource,
-            toastShown: !userDriven, at: new Date().toLocaleTimeString(),
+            userDriven, at: new Date().toLocaleTimeString(),
         };
         _lastPresetName = name;
-        if (!userDriven) showToast(name, true);
-        if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
+        if (userDriven) { _userPreset = name; clearDrift(); }
+        if (backdropEl && !backdropEl.classList.contains('chak-backdrop--hidden')) {
             const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
             renderPresetList(q || undefined, panelEl); updateCurrentLabel();
         }
         refreshBar();
     }
+
+    // ── 이탈 감지: 내가 고른 프리셋과 다른 상태가 계속되면 경고 ──
+    const s = getSettings();
+    if (!s.driftWarn) { clearDrift(); return; }
+    if (Date.now() < _profileSwitchUntil) return;
+    if (!_userPreset) { _userPreset = name; return; }
+
+    if (name !== _userPreset) {
+        if (!_driftSince) { _driftSince = Date.now(); refreshBar(); }
+        else if (!_driftWarned && Date.now() - _driftSince >= (s.driftDelaySec * 1000)) {
+            _driftWarned = true;
+            showDriftToast(name);
+            refreshBar();
+        }
+    } else if (_driftSince) {
+        clearDrift(); refreshBar();
+    }
+}
+
+function showDriftToast(current) {
+    const target = _userPreset;
+    showToast(`프리셋이 "${current}" 인 채예요 (원래: ${target})`, true, {
+        label: '되돌리기',
+        onClick: () => {
+            const hit = getPresetList().find(p => p.name === target)
+                || getPresetList().find(p => p.name.trim() === String(target).trim());
+            if (hit) { switchPreset(hit.value); }
+            else showToast(`"${target}" 을(를) 못 찾음`, true);
+        },
+    });
 }
 
 function watchPresetChanges() {
@@ -735,15 +851,25 @@ function watchPresetChanges() {
         el.addEventListener('touchstart', mark, { passive: true });
         el.addEventListener('keydown', mark);
 
-        el.addEventListener('change', () => {
-            setTimeout(checkPresetChanged, 50);
-        });
+        el.addEventListener('change', () => setTimeout(checkPresetChanged, 50));
+        // ST 내부(presetManager.selectPreset)는 jQuery .trigger('change') 를 쓰는데
+        // 그건 native addEventListener 로는 안 잡힌다
+        if (typeof $ !== 'undefined') $(el).on('change', () => setTimeout(checkPresetChanged, 50));
     }
     setInterval(checkPresetChanged, 300);
 }
 
 // 디버그용 — 콘솔에서 실행
-window.chakTest = () => showToast('테스트 프리셋', true);
+window.chakTest = () => showToast('테스트 경고입니다', true, { label: '되돌리기', onClick: () => console.log('[착착] 되돌리기 눌림') });
+window.chakDrift = () => ({
+    watching: getSettings().driftWarn,
+    userPreset: _userPreset,
+    current: getCurrentPresetName(),
+    drifted: isDrifted(),
+    driftForMs: _driftSince ? Date.now() - _driftSince : 0,
+    warned: _driftWarned,
+    lastChange: _lastDecision,
+});
 window.chakProfiles = () => getProfileList().map(p => {
     const i = inspectProfilePreset(p.value);
     return { name: p.name, id: p.value, stActive: p.selected, mode: i.rec?.mode,
