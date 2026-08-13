@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.6.5';
+const EXT_VERSION = '1.6.6';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -124,7 +124,8 @@ function getPresetList() {
     const s = getPresetSelector();
     return s ? Array.from(s.options).map(o => ({ value: o.value, name: o.text, selected: o.selected })) : [];
 }
-function switchPreset(value) {
+function switchPreset(value, options = {}) {
+    const source = options.source || 'preset-list';
     const s = getPresetSelector();
     if (!s) { dlog('switchPreset: 프리셋 select 없음! api=', getMainApi()); return; }
     dlog('switchPreset:', value);
@@ -156,10 +157,13 @@ function switchPreset(value) {
     catch (e) { dlog('❌ 목록 갱신 중 예외:', e?.message); }
     try {
         const name = s.options[s.selectedIndex]?.text ?? value;
-        if (profileSave?.ok) {
-            showToast(`💾 ${profileSave.profileName}에 "${profileSave.presetName}" 저장됨`);
+        if (source === 'profile-load') {
+            const profileName = options.profileName || getActiveProfileName();
+            showToast(`🔌 ${profileName} 연결 프로필의 "${name}" 적용됨`);
+        } else if (profileSave?.ok) {
+            showToast(`💾 ${profileSave.profileName} 연결 프로필에 "${profileSave.presetName}" 저장됨`);
         } else {
-            showToast(name);
+            showToast(`🎚 현재 프리셋이 "${name}"으로 변경됨`);
         }
     } catch (e) { dlog('❌ showToast 예외:', e?.message); }
     setTimeout(() => {
@@ -311,7 +315,7 @@ async function applyProfilePreset(key) {
     const before = getCurrentPresetName();
     if (normName(before) === normName(info.name)) {
         dlog('이미 적용 중:', `"${before}"`);
-        showToast(`이미 "${before}" 적용 중`);
+        showToast(`🔌 ${info.rec?.name || getActiveProfileName()} 연결 프로필의 "${before}" 이미 적용 중`);
         return;
     }
 
@@ -336,11 +340,11 @@ async function applyProfilePreset(key) {
                     const now2 = getCurrentPresetName();
                     dlog('재시도(/preset):', `현재 "${now2}"`, now2 === hit.name ? 'OK' : '실패');
                     if (now2 !== hit.name) showToast(`"${info.name}" 적용 실패 — 진단 로그 확인`, true);
-                    else { showToast(now2); refreshBar(); updateCurrentLabel(); }
+                    else { showToast(`🔌 ${info.rec?.name || getActiveProfileName()} 연결 프로필의 "${now2}" 적용됨`); refreshBar(); updateCurrentLabel(); }
                 }
             } catch (e) { dlog('재시도 에러:', e?.message); }
         }, 350);
-        switchPreset(hit.value);   // 패널에서 프리셋 누르는 것과 완전히 같은 경로
+        switchPreset(hit.value, { source: 'profile-load', profileName: info.rec?.name });
         return;
     }
 
@@ -360,7 +364,7 @@ async function applyProfilePreset(key) {
     _skipAutoSaveOnce = false;
 
     const after = getCurrentPresetName();
-    if (normName(after) !== normName(before)) showToast(after);
+    if (normName(after) !== normName(before)) showToast(`🔌 ${info.rec?.name || getActiveProfileName()} 연결 프로필의 "${after}" 적용됨`);
     else showToast(`"${info.name}" 을(를) 적용하지 못했어요`, true);
 
     [200, 700, 1500].forEach(ms => setTimeout(() => {
@@ -712,8 +716,13 @@ function createItem(preset, t, isFav, folder) {
     item.appendChild(nm); item.appendChild(acts);
     item.addEventListener('click', () => {
         dlog('프리셋 탭(패널):', preset.name);
-        switchPreset(preset.value);
-        closeDropdown();
+        const saveToProfile = getSettings().savePresetToSelectedProfile;
+        switchPreset(preset.value, { source: saveToProfile ? 'profile-save' : 'current-preset' });
+        if (saveToProfile) {
+            closeDropdown();
+        } else {
+            closePanel();
+        }
     });
     return item;
 }
