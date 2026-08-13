@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.6.4';
+const EXT_VERSION = '1.6.5';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -514,6 +514,9 @@ function buildUI() {
             </div>
         </div>
         <div class="chak-bar">
+            <label class="chak-profile-save-toggle" title="선택한 연결 프로필에 프리셋 자동 저장">
+                <input type="checkbox" class="chak-profile-save-checkbox" aria-label="선택한 연결 프로필에 프리셋 자동 저장" />
+            </label>
             <div class="chak-chip chak-chip--profile">
                 <span class="chak-chip-icon">🔌</span>
                 <span class="chak-chip-label">—</span>
@@ -551,6 +554,20 @@ function buildUI() {
         closeDropdown();
         const si = panelEl.querySelector('.chak-search');
         if (si) { si.focus(); si.select(); }
+    });
+    const profileSaveCheck = panelEl.querySelector('.chak-profile-save-checkbox');
+    profileSaveCheck.checked = getSettings().savePresetToSelectedProfile;
+    profileSaveCheck.addEventListener('click', (e) => e.stopPropagation());
+    profileSaveCheck.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const enabled = profileSaveCheck.checked;
+        getSettings().savePresetToSelectedProfile = enabled;
+        saveSettings();
+        dlog('선택 프로필 프리셋 자동 저장:', enabled ? '켜짐' : '꺼짐');
+        refreshBar();
+        showToast(enabled
+            ? '💾 선택 프로필 자동 저장 켜짐'
+            : '🔓 자동 저장 꺼짐 — 현재 프리셋만 변경');
     });
     // 드롭다운이 닫힌 직후의 잔여/합성 클릭이 패널 아래 요소를 누르는 것을 차단
     panelEl.addEventListener('click', (e) => {
@@ -812,6 +829,13 @@ function refreshBar() {
 
     const pc = bar.querySelector('.chak-chip--profile');
     const sc = bar.querySelector('.chak-chip--preset');
+    const saveToggle = bar.querySelector('.chak-profile-save-toggle');
+    const saveCheck = bar.querySelector('.chak-profile-save-checkbox');
+    saveToggle.style.display = tb.showProfile ? '' : 'none';
+    saveCheck.checked = getSettings().savePresetToSelectedProfile;
+    saveToggle.title = saveCheck.checked
+        ? '자동 저장 켜짐 — 선택한 연결 프로필에 프리셋을 저장합니다'
+        : '자동 저장 꺼짐 — 현재 프리셋만 변경합니다';
     pc.style.display = tb.showProfile ? '' : 'none';
     sc.style.display = tb.showPreset ? '' : 'none';
     sc.style.flexGrow = String(tb.presetRatio);
@@ -962,8 +986,6 @@ function buildSettingsUI() {
         <label class="checkbox_label"><input type="checkbox" id="chak_tb_enabled" /><span>프로필/프리셋 줄 표시</span></label>
         <p class="chak-settings-desc">착착 패널의 "현재:" 바로 위에 [연결 프로필][프리셋] 한 줄을 띄웁니다.</p>
         <div id="chak_tb_opts">
-            <label class="checkbox_label"><input type="checkbox" id="chak_profile_preset_save" /><span>선택한 연결 프로필에 프리셋 자동 저장</span></label>
-            <p class="chak-settings-desc">켜면 상단에서 고른 프로필에 프리셋 변경을 저장합니다. 끄면 현재 프리셋만 바뀌고 프로필에는 저장하지 않습니다.</p>
             <label class="checkbox_label"><input type="checkbox" id="chak_tb_profile" /><span>연결 프로필 칩</span></label>
             <label class="checkbox_label"><input type="checkbox" id="chak_tb_preset" /><span>프리셋 칩</span></label>
             <label class="checkbox_label"><input type="checkbox" id="chak_tb_icons" /><span>아이콘 표시</span></label>
@@ -995,13 +1017,6 @@ function buildSettingsUI() {
     const syncOut = () => { if (dOut && dRange) dOut.textContent = dRange.value + '초'; };
     syncOut(); dRange?.addEventListener('input', syncOut);
     bind('chak_tb_enabled', () => s.topbar.enabled, v => s.topbar.enabled = v);
-    bind('chak_profile_preset_save', () => s.savePresetToSelectedProfile, v => {
-        s.savePresetToSelectedProfile = v;
-        dlog('선택 프로필 프리셋 자동 저장:', v ? '켜짐' : '꺼짐');
-        showToast(v
-            ? '💾 선택 프로필 자동 저장 켜짐'
-            : '🔓 자동 저장 꺼짐 — 현재 프리셋만 변경');
-    });
     bind('chak_tb_profile', () => s.topbar.showProfile, v => s.topbar.showProfile = v);
     bind('chak_tb_preset', () => s.topbar.showPreset, v => s.topbar.showPreset = v);
     bind('chak_tb_icons', () => s.topbar.icons, v => s.topbar.icons = v);

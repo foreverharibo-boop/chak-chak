@@ -185,6 +185,29 @@
     flex-shrink: 0;
 }
 
+.chak-profile-save-toggle {
+    flex: 0 0 auto;
+    width: 17px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+.chak-profile-save-checkbox {
+    appearance: auto;
+    -webkit-appearance: checkbox;
+    width: 15px !important;
+    height: 15px !important;
+    min-width: 15px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    cursor: pointer;
+    accent-color: var(--SmartThemeQuoteColor, #5e8ad4);
+}
+
 .chak-chip {
     flex: 1 1 0;
     min-width: 0;
