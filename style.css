@@ -250,3 +250,6 @@
 .chak-chip--warn { background: rgba(224,160,48,0.12); }
 .chak-ver { font-size: 10px; opacity: 0.5; margin-left: 6px; font-weight: 400; }
 .chak-prof-sub { max-height: 4.5em; }
+.chak-prof-head { display: flex; align-items: center; gap: 6px; }
+.chak-prof-head .chak-prof-name { flex: 1; min-width: 0; }
+.chak-prof-badge { font-size: 9px; opacity: 0.6; border: 1px solid; border-radius: 4px; padding: 0 3px; flex: none; }

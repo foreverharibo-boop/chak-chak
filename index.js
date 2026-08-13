@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.4.2';
+const EXT_VERSION = '1.5.0';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -201,8 +201,18 @@ function findPresetByName(name) {
     return list.find(p => normName(p.name) === want) || null;
 }
 
-// 프로필이 프리셋 이름을 들고 있는지만 본다.
-// 실제 매칭은 ST 의 /preset (정확일치 → Fuse 퍼지) 에 맡긴다.
+// 정규화 완전일치가 실패했을 때의 느슨한 매칭
+function findPresetLoose(name) {
+    const want = normName(name);
+    if (!want) return null;
+    const list = getPresetList();
+    return list.find(p => normName(p.name).startsWith(want))
+        || list.find(p => want.startsWith(normName(p.name)))
+        || list.find(p => normName(p.name).includes(want))
+        || null;
+}
+
+// 프로필이 프리셋 이름을 들고 있는지만 본다
 function inspectProfilePreset(key) {
     const rec = getProfileRecord(key);
     if (!rec) return { ok: false, reason: '프로필을 찾을 수 없어요' };
@@ -222,7 +232,6 @@ function getProfilePresetName(key) {
 // 프로필의 프리셋만 빌려온다 — #connection_profiles 선택은 절대 건드리지 않음
 async function applyProfilePreset(key) {
     const info = inspectProfilePreset(key);
-    console.debug('[착착] applyProfilePreset', key, info);
     if (!info.ok) { showToast(info.reason, true); return; }
 
     const before = getCurrentPresetName();
@@ -231,34 +240,35 @@ async function applyProfilePreset(key) {
         return;
     }
 
-    _suppressChangeToast = Date.now();
-    _lastUserSelectTouch = Date.now();
-    _lastTouchSource = 'chak-profile-borrow';
+    const hit = findPresetByName(info.name) || findPresetLoose(info.name);
+    console.debug('[착착] borrow preset:', info.name, '→ option:', hit);
+
+    _skipAutoSaveOnce = true;   // 활성 프로필에 덮어쓰지 않기
     _profileSwitchUntil = Date.now() + 3000;
 
-    try {
-        const cmd = SillyTavern.getContext()?.SlashCommandParser?.commands?.['preset'];
-        if (cmd) {
-            await cmd.callback({}, info.name);
-        } else {
-            const hit = findPresetByName(info.name);
-            if (!hit) { showToast(`프리셋 "${info.name}" 을(를) 못 찾음`, true); return; }
-            _skipAutoSaveOnce = true;
-            switchPreset(hit.value);
-            return;
-        }
-    } catch (e) {
-        console.error('[착착] 프리셋 적용 실패', e);
-        showToast('프리셋 적용 실패 (콘솔 확인)', true);
+    if (hit) {
+        switchPreset(hit.value);   // 패널에서 프리셋 누르는 것과 완전히 같은 경로
         return;
     }
 
-    const after = getCurrentPresetName();
-    if (normName(after) !== normName(before)) {
-        showToast(after);
-    } else {
-        showToast(`"${info.name}" 을(를) 적용하지 못했어요`, true);
+    // 목록에서 못 찾으면 ST 의 퍼지 매칭에 맡겨본다
+    try {
+        const cmd = SillyTavern.getContext()?.SlashCommandParser?.commands?.['preset'];
+        if (!cmd) { showToast(`프리셋 "${info.name}" 을(를) 못 찾음`, true); _skipAutoSaveOnce = false; return; }
+        _suppressChangeToast = Date.now();
+        _lastUserSelectTouch = Date.now();
+        await cmd.callback({}, info.name);
+    } catch (e) {
+        console.error('[착착] 프리셋 적용 실패', e);
+        showToast('프리셋 적용 실패 (콘솔 확인)', true);
+        _skipAutoSaveOnce = false;
+        return;
     }
+    _skipAutoSaveOnce = false;
+
+    const after = getCurrentPresetName();
+    if (normName(after) !== normName(before)) showToast(after);
+    else showToast(`"${info.name}" 을(를) 적용하지 못했어요`, true);
 
     [200, 700, 1500].forEach(ms => setTimeout(() => {
         _lastPresetName = getCurrentPresetName();
@@ -647,17 +657,35 @@ function openProfileDropdown() {
         empty.style.color = t.text;
         dropdownEl.appendChild(empty);
     }
+    const curPreset = getCurrentPresetName();
     profiles.forEach(p => {
         const info = inspectProfilePreset(p.value);
+        // 지금 적용된 프리셋의 출처 = 이 프로필이면 '선택됨'으로 표시
+        const isCurrent = info.ok && normName(info.name) === normName(curPreset);
 
         const item = document.createElement('div');
-        item.className = 'chak-prof' + (p.selected ? ' chak-prof--active' : '') + (info.ok ? '' : ' chak-prof--off');
+        item.className = 'chak-prof'
+            + (isCurrent ? ' chak-prof--active' : '')
+            + (info.ok ? '' : ' chak-prof--off');
+
+        const head = document.createElement('div');
+        head.className = 'chak-prof-head';
 
         const nm = document.createElement('div');
         nm.className = 'chak-prof-name';
-        nm.textContent = p.name;
-        nm.style.color = p.selected ? t.accent : t.text;
-        item.appendChild(nm);
+        nm.textContent = (isCurrent ? '\u2713 ' : '') + p.name;
+        nm.style.color = isCurrent ? t.accent : t.text;
+        head.appendChild(nm);
+
+        if (p.selected) {
+            const badge = document.createElement('span');
+            badge.className = 'chak-prof-badge';
+            badge.textContent = 'ST';
+            badge.title = 'ST 에서 활성인 연결 프로필';
+            badge.style.borderColor = t.border;
+            head.appendChild(badge);
+        }
+        item.appendChild(head);
 
         const sub = document.createElement('div');
         sub.className = 'chak-prof-sub';
@@ -666,19 +694,24 @@ function openProfileDropdown() {
         item.appendChild(sub);
 
         item.title = info.ok
-            ? `프리셋 "${info.name}" 만 적용 (ST 연결 프로필은 그대로)`
+            ? `프리셋 "${info.name}" 적용 (ST 연결 프로필은 그대로)`
             : info.reason;
-        item.addEventListener('click', () => {
-            console.debug('[착착] profile row clicked:', p.name, info);
+
+        const onPick = (ev) => {
+            ev.preventDefault(); ev.stopPropagation();
+            console.debug('[착착] profile row picked:', ev.type, p.name, info);
             if (!info.ok) {
-                // 눌러도 죽어있지 않게 — 전체 사유를 펼쳐서 보여준다
                 sub.style.whiteSpace = 'normal';
                 sub.style.opacity = '1';
                 return;
             }
             applyProfilePreset(p.value);
             closeDropdown();
-        });
+        };
+        item.addEventListener('click', onPick);
+        // 모바일에서 click 이 안 잡히는 경우 대비
+        item.addEventListener('touchend', onPick, { passive: false });
+
         dropdownEl.appendChild(item);
     });
 
@@ -858,9 +891,16 @@ window.chakDrift = () => ({
 });
 window.chakProfiles = () => getProfileList().map(p => {
     const i = inspectProfilePreset(p.value);
-    return { name: p.name, id: p.value, stActive: p.selected, mode: i.rec?.mode,
-             preset: i.ok ? i.name : null, why: i.ok ? 'ok' : i.reason };
+    const hit = i.ok ? (findPresetByName(i.name) || findPresetLoose(i.name)) : null;
+    return {
+        name: p.name, id: p.value, stActive: p.selected,
+        preset: i.ok ? i.name : null,
+        why: i.ok ? 'ok' : i.reason,
+        matchedOption: hit ? hit.name : null,
+        matchedValue: hit ? hit.value : null,
+    };
 });
+window.chakPresets = () => getPresetList().map(p => ({ name: p.name, value: p.value, selected: p.selected }));
 window.chakTopbar = () => ({
     enabled: getSettings().topbar.enabled,
     dropdownOpen: _ddOpen,
