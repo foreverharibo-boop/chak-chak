@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.6.1';
+const EXT_VERSION = '1.6.2';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -327,6 +327,50 @@ async function applyProfilePreset(key) {
         _userPreset = _lastPresetName;
         clearDrift(); refreshBar(); updateCurrentLabel();
     }, ms));
+}
+
+function showToast(name, persistent, action) {
+    document.querySelector('.chak-toast')?.remove();
+    const toast = document.createElement('div');
+    toast.className = 'chak-toast' + (persistent ? ' chak-toast--warn' : '');
+    const label = persistent ? `⚠️ ${name}` : `착! → ${name}`;
+
+    const text = document.createElement('span');
+    text.className = 'chak-toast-text';
+    text.textContent = label;
+    toast.appendChild(text);
+
+    const t = getTheme();
+    toast.style.backgroundColor = t.bg;
+    toast.style.color = persistent ? WARN_COLOR : t.text;
+    toast.style.borderColor = persistent ? WARN_COLOR : t.border;
+
+    const dismiss = () => {
+        toast.classList.remove('chak-toast--visible');
+        setTimeout(() => toast.remove(), 300);
+    };
+
+    if (action) {
+        const btn = document.createElement('span');
+        btn.className = 'chak-toast-action';
+        btn.textContent = action.label;
+        btn.style.borderColor = WARN_COLOR;
+        btn.addEventListener('click', (e) => { e.stopPropagation(); dismiss(); action.onClick(); });
+        toast.appendChild(btn);
+    }
+    if (persistent) {
+        const close = document.createElement('span');
+        close.className = 'chak-toast-close';
+        close.textContent = '✕';
+        toast.appendChild(close);
+    }
+    toast.addEventListener('click', dismiss);
+
+    try { document.documentElement.appendChild(toast); } catch (e) { /* noop */ }
+    if (!toast.isConnected) document.body.appendChild(toast);
+
+    requestAnimationFrame(() => toast.classList.add('chak-toast--visible'));
+    if (!persistent) setTimeout(dismiss, 1500);
 }
 
 // ── Favorites & Folders ──
