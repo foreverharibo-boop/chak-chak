@@ -219,3 +219,4 @@
 .chak-settings-range input[type="range"] { flex: 1; }
 .chak-dd-tag { font-size: 10px; opacity: 0.55; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: 6px; }
 .chak-dd .chak-item { justify-content: space-between; }
+.chak-item--muted .chak-item-name { opacity: 0.45; }

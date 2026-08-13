@@ -160,7 +160,7 @@ function getCurrentProfileName() {
 let _profileSwitchUntil = 0;
 let _skipAutoSaveOnce = false;
 
-// connectionManager에 저장된 프로필 객체 (id 또는 이름으로 조회)
+// connectionManager에 저장된 프로필 객체 (option.value = profile.id)
 function getProfileRecord(key) {
     try {
         const list = SillyTavern.getContext().extensionSettings?.connectionManager?.profiles;
@@ -169,33 +169,64 @@ function getProfileRecord(key) {
     } catch (e) { return null; }
 }
 
+// 'cc' = Chat Completion, 'tc' = Text Completion (connection-manager 기준)
+function getCurrentMode() { return getMainApi() === 'openai' ? 'cc' : 'tc'; }
+
+// 프로필이 실제로 프리셋을 들고 있는지 + 왜 없는지
+function inspectProfilePreset(key) {
+    const rec = getProfileRecord(key);
+    if (!rec) return { ok: false, reason: '프로필을 찾을 수 없어요' };
+    if (Array.isArray(rec.exclude) && rec.exclude.includes('preset'))
+        return { ok: false, reason: '이 프로필은 프리셋을 저장하지 않도록 설정돼 있어요', rec };
+    const name = typeof rec.preset === 'string' ? rec.preset.trim() : '';
+    if (!name || name === '<None>' || name === '<Empty>')
+        return { ok: false, reason: '이 프로필에 저장된 프리셋이 없어요', rec };
+    if (rec.mode && rec.mode !== getCurrentMode())
+        return { ok: false, reason: `다른 API 계열(${rec.mode}) 프로필이라 프리셋만 가져올 수 없어요`, rec, name };
+    return { ok: true, name, rec };
+}
+
 function getProfilePresetName(key) {
     const rec = getProfileRecord(key);
     if (!rec) return null;
-    for (const f of ['preset', 'presetName', 'openai_preset', 'settings_preset']) {
-        if (typeof rec[f] === 'string' && rec[f].trim()) return rec[f].trim();
-    }
-    return null;
+    if (Array.isArray(rec.exclude) && rec.exclude.includes('preset')) return null;
+    const n = typeof rec.preset === 'string' ? rec.preset.trim() : '';
+    return (!n || n === '<None>' || n === '<Empty>') ? null : n;
 }
 
-// 프로필의 프리셋만 빌려온다 — #connection_profiles 의 선택은 절대 건드리지 않음
-function applyProfilePreset(key) {
-    const presetName = getProfilePresetName(key);
-    if (!presetName) {
-        showToast('이 프로필엔 프리셋 정보가 없어요', true);
-        return;
-    }
-    const list = getPresetList();
-    const hit = list.find(p => p.name === presetName)
-        || list.find(p => p.name.trim() === presetName)
-        || list.find(p => p.value === presetName);
-    if (!hit) {
-        showToast(`프리셋 "${presetName}" 을(를) 못 찾음`, true);
-        return;
-    }
+// 프로필의 프리셋만 빌려온다 — #connection_profiles 선택은 절대 건드리지 않음
+async function applyProfilePreset(key) {
+    const info = inspectProfilePreset(key);
+    if (!info.ok) { showToast(info.reason, true); return; }
+
+    _suppressChangeToast = Date.now();
+    _lastUserSelectTouch = Date.now();
+    _lastTouchSource = 'chak-profile-borrow';
     _profileSwitchUntil = Date.now() + 3000;
-    _skipAutoSaveOnce = true;   // 활성 프로필에 덮어쓰지 않도록
-    switchPreset(hit.value);
+
+    try {
+        // ST가 프로필을 적용할 때 쓰는 것과 같은 경로 (정확 일치 → 퍼지 매칭)
+        const cmd = SillyTavern.getContext()?.SlashCommandParser?.commands?.['preset'];
+        if (cmd) {
+            const applied = await cmd.callback({}, info.name);
+            showToast(applied || info.name);
+        } else {
+            const hit = getPresetList().find(p => p.name.trim() === info.name);
+            if (!hit) { showToast(`프리셋 "${info.name}" 을(를) 못 찾음`, true); return; }
+            _skipAutoSaveOnce = true;
+            switchPreset(hit.value);
+            return;
+        }
+    } catch (e) {
+        console.error('[착착] 프리셋 적용 실패', e);
+        showToast('프리셋 적용 실패 (콘솔 확인)', true);
+        return;
+    }
+
+    [200, 700, 1500].forEach(ms => setTimeout(() => {
+        refreshBar(); updateCurrentLabel();
+        _lastPresetName = getCurrentPresetName();
+    }, ms));
 }
 
 // ── Favorites & Folders ──
@@ -573,7 +604,6 @@ function openProfileDropdown() {
         empty.style.color = t.text;
         dropdownEl.appendChild(empty);
     }
-    const curPreset = getCurrentPresetName();
     profiles.forEach(p => {
         const item = document.createElement('div');
         item.className = 'chak-item' + (p.selected ? ' chak-item--active' : '');
@@ -585,13 +615,15 @@ function openProfileDropdown() {
 
         const tag = document.createElement('span');
         tag.className = 'chak-dd-tag';
-        const pn = getProfilePresetName(p.value);
-        if (p.selected) { tag.textContent = 'ST 활성'; tag.style.color = t.accent; }
-        else if (pn && pn === curPreset) { tag.textContent = '적용됨'; tag.style.color = t.accent; }
-        else if (pn) { tag.textContent = pn; tag.style.color = t.text; }
+        const info = inspectProfilePreset(p.value);
+        tag.textContent = info.ok ? info.name : '—';
+        tag.style.color = t.text;
+        if (!info.ok) item.classList.add('chak-item--muted');
         item.appendChild(tag);
 
-        item.title = pn ? `프리셋 "${pn}" 만 적용 (ST 활성 프로필은 유지)` : '프리셋 정보 없음';
+        item.title = info.ok
+            ? `프리셋 "${info.name}" 만 적용 (ST 연결 프로필은 그대로)`
+            : info.reason;
         item.addEventListener('click', () => { applyProfilePreset(p.value); closeDropdown(); });
         dropdownEl.appendChild(item);
     });
@@ -712,11 +744,11 @@ function watchPresetChanges() {
 
 // 디버그용 — 콘솔에서 실행
 window.chakTest = () => showToast('테스트 프리셋', true);
-window.chakProfiles = () => getProfileList().map(p => ({
-    name: p.name, id: p.value, stActive: p.selected,
-    preset: getProfilePresetName(p.value),
-    record: getProfileRecord(p.value),
-}));
+window.chakProfiles = () => getProfileList().map(p => {
+    const i = inspectProfilePreset(p.value);
+    return { name: p.name, id: p.value, stActive: p.selected, mode: i.rec?.mode,
+             preset: i.ok ? i.name : null, why: i.ok ? 'ok' : i.reason };
+});
 window.chakTopbar = () => ({
     enabled: getSettings().topbar.enabled,
     dropdownOpen: _ddOpen,
