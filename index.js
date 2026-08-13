@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.6.3';
+const EXT_VERSION = '1.6.4';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -9,7 +9,7 @@ let _lastDecision = null;
 const WARN_COLOR = '#e0a030';
 
 const defaultTopbar = { enabled: true, showProfile: true, showPreset: true, icons: true, presetRatio: 1.3 };
-const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true, showFab: true, activeProfileId: null, driftWarn: true, driftDelaySec: 3, topbar: structuredClone(defaultTopbar) };
+const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true, showFab: true, activeProfileId: null, savePresetToSelectedProfile: true, driftWarn: true, driftDelaySec: 3, topbar: structuredClone(defaultTopbar) };
 
 function getSettings() {
     const ctx = SillyTavern.getContext();
@@ -21,6 +21,7 @@ function getSettings() {
     if (s.recentOpen === undefined) s.recentOpen = true;
     if (s.showFab === undefined) s.showFab = true;
     if (s.activeProfileId === undefined) s.activeProfileId = null;
+    if (s.savePresetToSelectedProfile === undefined) s.savePresetToSelectedProfile = true;
     if (s.driftWarn === undefined) s.driftWarn = true;
     if (s.driftDelaySec === undefined) s.driftDelaySec = 3;
     if (!s.topbar) s.topbar = structuredClone(defaultTopbar);
@@ -142,17 +143,24 @@ function switchPreset(value) {
     }
     dlog('  trigger 후 현재:', `"${getCurrentPresetName()}"`);
 
+    let profileSave = null;
     if (_skipAutoSaveOnce) {
         _skipAutoSaveOnce = false;
         dlog('프로필 프리셋 저장 건너뜀: 프로필에 저장된 프리셋 불러오기 중');
+    } else if (getSettings().savePresetToSelectedProfile) {
+        profileSave = savePresetToActiveProfile(getCurrentPresetName());
     } else {
-        savePresetToActiveProfile(getCurrentPresetName());
+        dlog('프로필 프리셋 저장 건너뜀: 자동 저장 꺼짐');
     }
     try { renderPresetList(); updateCurrentLabel(); }
     catch (e) { dlog('❌ 목록 갱신 중 예외:', e?.message); }
     try {
         const name = s.options[s.selectedIndex]?.text ?? value;
-        showToast(name);
+        if (profileSave?.ok) {
+            showToast(`💾 ${profileSave.profileName}에 "${profileSave.presetName}" 저장됨`);
+        } else {
+            showToast(name);
+        }
     } catch (e) { dlog('❌ showToast 예외:', e?.message); }
     setTimeout(() => {
         _lastPresetName = getCurrentPresetName();
@@ -222,17 +230,17 @@ function savePresetToActiveProfile(presetName) {
     const rec = profileId ? getProfileRecord(profileId) : null;
     if (!rec) {
         dlog('프로필 프리셋 저장 안 함: 선택된 연결 프로필 없음');
-        return false;
+        return { ok: false, reason: 'no-profile' };
     }
     if (Array.isArray(rec.exclude) && rec.exclude.includes('preset')) {
         dlog('프로필 프리셋 저장 안 함:', `"${rec.name}"`, '프리셋 저장 제외 상태');
-        return false;
+        return { ok: false, reason: 'preset-excluded', profileName: rec.name };
     }
 
     const name = String(presetName ?? '').trim();
     if (!name || name === '(없음)') {
         dlog('프로필 프리셋 저장 실패:', `"${rec.name}"`, '유효한 프리셋 이름 없음');
-        return false;
+        return { ok: false, reason: 'invalid-preset', profileName: rec.name };
     }
 
     const before = typeof rec.preset === 'string' ? rec.preset : '';
@@ -246,7 +254,7 @@ function savePresetToActiveProfile(presetName) {
         `"${rec.name}"`,
         `"${before || '(없음)'}" → "${name}"`,
     );
-    return ok;
+    return { ok, profileName: rec.name, presetName: name, before };
 }
 
 // 프리셋 이름이 지금 API의 프리셋 목록에 실제로 있는지 (ST findPreset 과 같은 방식: option 텍스트 비교)
@@ -954,6 +962,8 @@ function buildSettingsUI() {
         <label class="checkbox_label"><input type="checkbox" id="chak_tb_enabled" /><span>프로필/프리셋 줄 표시</span></label>
         <p class="chak-settings-desc">착착 패널의 "현재:" 바로 위에 [연결 프로필][프리셋] 한 줄을 띄웁니다.</p>
         <div id="chak_tb_opts">
+            <label class="checkbox_label"><input type="checkbox" id="chak_profile_preset_save" /><span>선택한 연결 프로필에 프리셋 자동 저장</span></label>
+            <p class="chak-settings-desc">켜면 상단에서 고른 프로필에 프리셋 변경을 저장합니다. 끄면 현재 프리셋만 바뀌고 프로필에는 저장하지 않습니다.</p>
             <label class="checkbox_label"><input type="checkbox" id="chak_tb_profile" /><span>연결 프로필 칩</span></label>
             <label class="checkbox_label"><input type="checkbox" id="chak_tb_preset" /><span>프리셋 칩</span></label>
             <label class="checkbox_label"><input type="checkbox" id="chak_tb_icons" /><span>아이콘 표시</span></label>
@@ -985,6 +995,13 @@ function buildSettingsUI() {
     const syncOut = () => { if (dOut && dRange) dOut.textContent = dRange.value + '초'; };
     syncOut(); dRange?.addEventListener('input', syncOut);
     bind('chak_tb_enabled', () => s.topbar.enabled, v => s.topbar.enabled = v);
+    bind('chak_profile_preset_save', () => s.savePresetToSelectedProfile, v => {
+        s.savePresetToSelectedProfile = v;
+        dlog('선택 프로필 프리셋 자동 저장:', v ? '켜짐' : '꺼짐');
+        showToast(v
+            ? '💾 선택 프로필 자동 저장 켜짐'
+            : '🔓 자동 저장 꺼짐 — 현재 프리셋만 변경');
+    });
     bind('chak_tb_profile', () => s.topbar.showProfile, v => s.topbar.showProfile = v);
     bind('chak_tb_preset', () => s.topbar.showPreset, v => s.topbar.showPreset = v);
     bind('chak_tb_icons', () => s.topbar.icons, v => s.topbar.icons = v);
