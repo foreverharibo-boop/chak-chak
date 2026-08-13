@@ -6,7 +6,8 @@ let _lastUserSelectTouch = 0;
 let _lastTouchSource = 'none';
 let _lastDecision = null;
 
-const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true };
+const defaultTopbar = { enabled: false, showProfile: true, showPreset: true, icons: true, presetRatio: 1.3 };
+const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true, showFab: true, topbar: structuredClone(defaultTopbar) };
 
 function getSettings() {
     const ctx = SillyTavern.getContext();
@@ -16,6 +17,13 @@ function getSettings() {
     if (!s.folderOpenState) s.folderOpenState = {};
     if (!s.recentPresets) s.recentPresets = [];
     if (s.recentOpen === undefined) s.recentOpen = true;
+    if (s.showFab === undefined) s.showFab = true;
+    if (!s.topbar) s.topbar = structuredClone(defaultTopbar);
+    delete s.topbar.autoSaveProfile;
+    delete s.autoSaveProfile;
+    for (const [k, v] of Object.entries(defaultTopbar)) {
+        if (s.topbar[k] === undefined) s.topbar[k] = v;
+    }
     return s;
 }
 function saveSettings() { SillyTavern.getContext().saveSettingsDebounced(); }
@@ -123,6 +131,51 @@ function switchPreset(value) {
     const name = s.options[s.selectedIndex]?.text ?? value;
     showToast(name);
     setTimeout(() => { _lastPresetName = getCurrentPresetName(); }, 600);
+    refreshTopbar();
+}
+
+// ── Connection profiles ──
+
+function getProfileSelector() { return document.getElementById('connection_profiles'); }
+
+function getProfileList() {
+    const s = getProfileSelector();
+    if (!s) return [];
+    return Array.from(s.options)
+        .filter(o => o.value !== '' && o.textContent.trim() !== '')
+        .map(o => ({ value: o.value, name: o.textContent.trim(), selected: o.selected }));
+}
+
+function getCurrentProfileName() {
+    const s = getProfileSelector();
+    if (!s || s.selectedIndex < 0) return '(없음)';
+    const txt = s.options[s.selectedIndex]?.textContent?.trim();
+    return txt || '(없음)';
+}
+
+let _profileSwitchUntil = 0;
+
+function switchProfile(value) {
+    const s = getProfileSelector();
+    if (!s) return;
+    // 프로필을 바꾸면 프리셋도 같이 바뀌므로, 그 동안은 "자동 변경" 경고를 끈다
+    _profileSwitchUntil = Date.now() + 5000;
+    _suppressChangeToast = Date.now();
+    _lastUserSelectTouch = Date.now();
+    _lastTouchSource = 'chak-topbar-profile';
+
+    s.value = value;
+    if (typeof $ !== 'undefined') $(s).trigger('change');
+    s.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const name = s.options[s.selectedIndex]?.textContent?.trim() ?? value;
+    showToast(name);
+
+    // 프로필 로드는 비동기 — 몇 번 나눠서 새로고침
+    [300, 800, 1500, 2500].forEach(ms => setTimeout(() => {
+        refreshTopbar();
+        _lastPresetName = getCurrentPresetName();
+    }, ms));
 }
 
 function showToast(name, persistent) {
@@ -261,7 +314,7 @@ function buildUI() {
         </div>`;
     panelEl.querySelector('.chak-panel-close').addEventListener('click', closePanel);
     panelEl.querySelector('.chak-search').addEventListener('input', (e) => {
-        renderPresetList(e.target.value.trim().toLowerCase());
+        renderPresetList(e.target.value.trim().toLowerCase(), panelEl);
     });
     panelEl.querySelector('.chak-folder-add').addEventListener('click', () => {
         const n = prompt('폴더 이름:'); if (n?.trim()) { addFolder(n.trim()); renderPresetList(); }
@@ -287,7 +340,7 @@ function togglePanel() { backdropEl.classList.contains('chak-backdrop--hidden') 
 function openPanel() {
     const searchInput = panelEl.querySelector('.chak-search');
     if (searchInput) searchInput.value = '';
-    renderPresetList(); updateCurrentLabel(); applyTheme(panelEl, true);
+    renderPresetList(undefined, panelEl); updateCurrentLabel(); applyTheme(panelEl, true);
     backdropEl.classList.remove('chak-backdrop--hidden');
     fabEl.classList.add('chak-fab--active');
 }
@@ -297,13 +350,19 @@ function updateCurrentLabel() {
     if (l) { l.textContent = getCurrentPresetName(); l.style.color = getTheme().accent; }
 }
 
-function renderPresetList(searchQuery) {
+let _renderRoot = null;
+
+function renderPresetList(searchQuery, root) {
+    root = root || _renderRoot || panelEl;
+    if (!root) return;
+    _renderRoot = root;
     let presets = getPresetList();
     const settings = getSettings(), t = getTheme();
-    const foldersC = panelEl.querySelector('.chak-list--folders');
-    const favC = panelEl.querySelector('.chak-list--favorites');
-    const allC = panelEl.querySelector('.chak-list--all');
-    const allLabel = panelEl.querySelector('.chak-list-section > .chak-section-label');
+    const foldersC = root.querySelector('.chak-list--folders');
+    const favC = root.querySelector('.chak-list--favorites');
+    const allC = root.querySelector('.chak-list--all');
+    const allLabel = root.querySelector('.chak-list-section > .chak-section-label');
+    if (!foldersC || !favC || !allC) return;
 
     // 검색 필터
     if (searchQuery) {
@@ -353,10 +412,10 @@ function renderPresetList(searchQuery) {
     // ── 전체 (검색 시: 결과 전체, 비검색 시: 폴더 미분류만) ──
     allC.innerHTML = '';
     if (searchQuery) {
-        allLabel.textContent = `🔍 검색 결과 (${presets.length})`;
+        if (allLabel) allLabel.textContent = `🔍 검색 결과 (${presets.length})`;
         presets.forEach(p => allC.appendChild(createItem(p, t, false, null)));
     } else {
-        allLabel.textContent = '전체 프리셋';
+        if (allLabel) allLabel.textContent = '전체 프리셋';
         const inFolder = new Set(Object.values(getFolders()).flat());
         presets.filter(p => !inFolder.has(p.value)).forEach(p => allC.appendChild(createItem(p, t, false, null)));
     }
@@ -394,7 +453,7 @@ function createItem(preset, t, isFav, folder) {
     }
 
     item.appendChild(nm); item.appendChild(acts);
-    item.addEventListener('click', () => switchPreset(preset.value));
+    item.addEventListener('click', () => { switchPreset(preset.value); closeDropdown(); });
     return item;
 }
 
@@ -425,7 +484,7 @@ function showFolderPicker(anchorEl, presetValue, t, currentFolder) {
     });
 
     // Position: CSS handles centering
-    panelEl.appendChild(picker);
+    (_renderRoot || panelEl).appendChild(picker);
 
     // Close on outside click
     const closePicker = (e) => {
@@ -434,24 +493,241 @@ function showFolderPicker(anchorEl, presetValue, t, currentFolder) {
     setTimeout(() => document.addEventListener('click', closePicker, true), 0);
 }
 
+// ── 상단바 모드 ──
+let topbarEl = null, dropdownEl = null, ddBackdropEl = null, _ddKind = null;
+
+function buildTopbar() {
+    topbarEl = document.createElement('div');
+    topbarEl.id = 'chak-topbar';
+    topbarEl.innerHTML = `
+        <div class="chak-chip chak-chip--profile">
+            <span class="chak-chip-icon">🔌</span>
+            <span class="chak-chip-label">—</span>
+            <span class="chak-chip-caret">▾</span>
+        </div>
+        <div class="chak-chip chak-chip--preset">
+            <span class="chak-chip-icon">🎚</span>
+            <span class="chak-chip-label">—</span>
+            <span class="chak-chip-caret">▾</span>
+        </div>`;
+    document.documentElement.appendChild(topbarEl);
+
+    topbarEl.querySelector('.chak-chip--profile').addEventListener('click', (e) => {
+        e.stopPropagation(); toggleDropdown('profile');
+    });
+    topbarEl.querySelector('.chak-chip--preset').addEventListener('click', (e) => {
+        e.stopPropagation(); toggleDropdown('preset');
+    });
+
+    ddBackdropEl = document.createElement('div');
+    ddBackdropEl.id = 'chak-dd-backdrop';
+    ddBackdropEl.classList.add('chak-dd--hidden');
+    ddBackdropEl.addEventListener('click', (e) => { if (e.target === ddBackdropEl) closeDropdown(); });
+
+    dropdownEl = document.createElement('div');
+    dropdownEl.id = 'chak-dropdown';
+    dropdownEl.addEventListener('click', (e) => e.stopPropagation());
+    ddBackdropEl.appendChild(dropdownEl);
+    document.documentElement.appendChild(ddBackdropEl);
+
+    // 위치 추적
+    const holder = document.getElementById('top-settings-holder');
+    if (holder && window.ResizeObserver) new ResizeObserver(positionTopbar).observe(holder);
+    window.addEventListener('resize', positionTopbar);
+    window.addEventListener('orientationchange', () => setTimeout(positionTopbar, 200));
+    setInterval(positionTopbar, 1000);
+}
+
+function positionTopbar() {
+    if (!topbarEl || topbarEl.style.display === 'none') return;
+    let top = 0;
+    for (const id of ['top-settings-holder', 'top-bar']) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.height > 0) { top = Math.max(top, r.bottom); }
+    }
+    topbarEl.style.top = Math.max(0, Math.round(top)) + 'px';
+
+    const chat = document.getElementById('chat');
+    if (chat) chat.style.paddingTop = (topbarEl.offsetHeight + 4) + 'px';
+}
+
+function refreshTopbar() {
+    if (!topbarEl) return;
+    const s = getSettings(), tb = s.topbar;
+    const t = getTheme();
+
+    topbarEl.style.display = (s.enabled && tb.enabled) ? '' : 'none';
+    if (!s.enabled || !tb.enabled) {
+        const chat = document.getElementById('chat');
+        if (chat) chat.style.paddingTop = '';
+        return;
+    }
+
+    topbarEl.style.backgroundColor = t.bg;
+    topbarEl.style.color = t.text;
+    topbarEl.style.borderBottomColor = t.border;
+
+    const pc = topbarEl.querySelector('.chak-chip--profile');
+    const sc = topbarEl.querySelector('.chak-chip--preset');
+    pc.style.display = tb.showProfile ? '' : 'none';
+    sc.style.display = tb.showPreset ? '' : 'none';
+    sc.style.flexGrow = String(tb.presetRatio);
+
+    for (const chip of [pc, sc]) {
+        chip.style.borderColor = t.border;
+        chip.style.color = t.text;
+        chip.querySelector('.chak-chip-icon').style.display = tb.icons ? '' : 'none';
+    }
+    pc.querySelector('.chak-chip-label').textContent = getCurrentProfileName();
+    sc.querySelector('.chak-chip-label').textContent = getCurrentPresetName();
+
+    pc.classList.toggle('chak-chip--open', _ddKind === 'profile');
+    sc.classList.toggle('chak-chip--open', _ddKind === 'preset');
+    if (_ddKind === 'profile') { pc.style.borderColor = t.accent; pc.style.color = t.accent; }
+    if (_ddKind === 'preset') { sc.style.borderColor = t.accent; sc.style.color = t.accent; }
+
+    positionTopbar();
+}
+
+function toggleDropdown(kind) {
+    if (_ddKind === kind) { closeDropdown(); return; }
+    openDropdown(kind);
+}
+
+function closeDropdown() {
+    if (!ddBackdropEl) return;
+    ddBackdropEl.classList.add('chak-dd--hidden');
+    _ddKind = null;
+    _renderRoot = null;
+    refreshTopbar();
+}
+
+function openDropdown(kind) {
+    const t = getTheme(true);
+    _ddKind = kind;
+    dropdownEl.style.backgroundColor = t.bg;
+    dropdownEl.style.color = t.text;
+    dropdownEl.style.borderColor = t.border;
+
+    if (kind === 'preset') {
+        dropdownEl.innerHTML = `
+            <div class="chak-search-wrap">
+                <input type="text" class="chak-search" placeholder="🔍 프리셋 검색..." />
+            </div>
+            <div class="chak-list-section">
+                <div class="chak-list chak-list--favorites"></div>
+                <div class="chak-list chak-list--folders"></div>
+                <div class="chak-section-label">전체 프리셋</div>
+                <div class="chak-list chak-list--all"></div>
+            </div>`;
+        dropdownEl.querySelector('.chak-search').addEventListener('input', (e) => {
+            renderPresetList(e.target.value.trim().toLowerCase(), dropdownEl);
+        });
+        renderPresetList(undefined, dropdownEl);
+        applyTheme(dropdownEl, false);
+        dropdownEl.style.backgroundColor = t.bg;
+    } else {
+        dropdownEl.innerHTML = `<div class="chak-list-section"><div class="chak-list chak-list--profiles"></div></div>`;
+        const c = dropdownEl.querySelector('.chak-list--profiles');
+        const profiles = getProfileList();
+        if (!profiles.length) {
+            const empty = document.createElement('div');
+            empty.className = 'chak-dd-empty';
+            empty.textContent = '연결 프로필이 없습니다';
+            empty.style.color = t.text;
+            c.appendChild(empty);
+        }
+        profiles.forEach(p => {
+            const item = document.createElement('div');
+            item.className = 'chak-item' + (p.selected ? ' chak-item--active' : '');
+            const nm = document.createElement('span');
+            nm.className = 'chak-item-name';
+            nm.textContent = p.name;
+            nm.style.color = p.selected ? t.accent : t.text;
+            item.appendChild(nm);
+            item.addEventListener('click', () => { switchProfile(p.value); closeDropdown(); });
+            c.appendChild(item);
+        });
+    }
+
+    ddBackdropEl.classList.remove('chak-dd--hidden');
+    positionDropdown(kind);
+    refreshTopbar();
+}
+
+function positionDropdown(kind) {
+    const chip = topbarEl.querySelector(kind === 'preset' ? '.chak-chip--preset' : '.chak-chip--profile');
+    if (!chip) return;
+    const r = chip.getBoundingClientRect();
+    dropdownEl.style.width = Math.max(r.width, 210) + 'px';
+    dropdownEl.style.top = (r.bottom + 4) + 'px';
+    dropdownEl.style.maxHeight = Math.max(160, window.innerHeight - r.bottom - 24) + 'px';
+    const w = dropdownEl.offsetWidth;
+    let left = r.left;
+    if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;
+    if (left < 8) left = 8;
+    dropdownEl.style.left = Math.round(left) + 'px';
+}
+
 // ── Settings ──
 function buildSettingsUI() {
     const html = `<div class="chak-settings"><div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header"><b>착착 ⚡ Chak-Chak</b>
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
-        <div class="inline-drawer-content"><label class="checkbox_label"><input type="checkbox" id="chak_enabled" /><span>활성화</span></label>
-        <p class="chak-settings-desc">채팅 옆 ⚡ 버튼으로 프리셋을 빠르게 전환합니다.</p></div></div></div>`;
+        <div class="inline-drawer-content">
+        <label class="checkbox_label"><input type="checkbox" id="chak_enabled" /><span>활성화</span></label>
+        <label class="checkbox_label"><input type="checkbox" id="chak_show_fab" /><span>입력창 ⚡ 버튼 표시</span></label>
+        <hr class="chak-settings-hr" />
+        <label class="checkbox_label"><input type="checkbox" id="chak_tb_enabled" /><span>상단바 모드</span></label>
+        <p class="chak-settings-desc">상단바 바로 아래에 [연결 프로필][프리셋] 한 줄을 띄웁니다.</p>
+        <div id="chak_tb_opts">
+            <label class="checkbox_label"><input type="checkbox" id="chak_tb_profile" /><span>연결 프로필 칩</span></label>
+            <label class="checkbox_label"><input type="checkbox" id="chak_tb_preset" /><span>프리셋 칩</span></label>
+            <label class="checkbox_label"><input type="checkbox" id="chak_tb_icons" /><span>아이콘 표시</span></label>
+            <label class="chak-settings-range"><span>프리셋 칩 너비</span>
+                <input type="range" id="chak_tb_ratio" min="0.6" max="2.5" step="0.1" />
+            </label>
+        </div>
+        </div></div></div>`;
     document.getElementById('extensions_settings2').insertAdjacentHTML('beforeend', html);
-    const cb = document.getElementById('chak_enabled');
-    cb.checked = getSettings().enabled;
-    cb.addEventListener('change', () => { getSettings().enabled = cb.checked; saveSettings(); updateVisibility(); });
+
+    const s = getSettings();
+    const bind = (id, get, set) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.type === 'checkbox') el.checked = get(); else el.value = get();
+        el.addEventListener('change', () => {
+            set(el.type === 'checkbox' ? el.checked : parseFloat(el.value));
+            saveSettings(); updateVisibility();
+        });
+        if (el.type === 'range') el.addEventListener('input', () => { set(parseFloat(el.value)); refreshTopbar(); });
+    };
+
+    bind('chak_enabled', () => s.enabled, v => s.enabled = v);
+    bind('chak_show_fab', () => s.showFab, v => s.showFab = v);
+    bind('chak_tb_enabled', () => s.topbar.enabled, v => s.topbar.enabled = v);
+    bind('chak_tb_profile', () => s.topbar.showProfile, v => s.topbar.showProfile = v);
+    bind('chak_tb_preset', () => s.topbar.showPreset, v => s.topbar.showPreset = v);
+    bind('chak_tb_icons', () => s.topbar.icons, v => s.topbar.icons = v);
+    bind('chak_tb_ratio', () => s.topbar.presetRatio, v => s.topbar.presetRatio = v);
 }
-function updateVisibility() { if (fabEl) fabEl.style.display = getSettings().enabled ? '' : 'none'; if (!getSettings().enabled) closePanel(); }
+
+function updateVisibility() {
+    const s = getSettings();
+    if (fabEl) fabEl.style.display = (s.enabled && s.showFab) ? '' : 'none';
+    if (!s.enabled) { closePanel(); closeDropdown(); }
+    const opts = document.getElementById('chak_tb_opts');
+    if (opts) opts.style.display = s.topbar.enabled ? '' : 'none';
+    refreshTopbar();
+}
 
 let _lastPresetName = null;
 let _suppressChangeToast = 0;
 
 function checkPresetChanged() {
+    if (Date.now() < _profileSwitchUntil) { _lastPresetName = getCurrentPresetName(); return; }
     if (Date.now() - _suppressChangeToast < 1500) return;
     const name = getCurrentPresetName();
     if (!name || name === '(없음)') return;
@@ -468,8 +744,9 @@ function checkPresetChanged() {
         if (!userDriven) showToast(name, true);
         if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
             const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
-            renderPresetList(q || undefined); updateCurrentLabel();
+            renderPresetList(q || undefined, panelEl); updateCurrentLabel();
         }
+        refreshTopbar();
     }
 }
 
@@ -498,6 +775,15 @@ function watchPresetChanges() {
 
 // 디버그용 — 콘솔에서 실행
 window.chakTest = () => showToast('테스트 프리셋', true);
+window.chakTopbar = () => ({
+    enabled: getSettings().topbar.enabled,
+    top: topbarEl?.style.top,
+    height: topbarEl?.offsetHeight,
+    profileSelectFound: !!getProfileSelector(),
+    profiles: getProfileList().map(p => p.name),
+    currentProfile: getCurrentProfileName(),
+    currentPreset: getCurrentPresetName(),
+});
 window.chakStatus = () => ({
     lastPresetName: _lastPresetName,
     currentName: getCurrentPresetName(),
@@ -506,8 +792,28 @@ window.chakStatus = () => ({
     lastDecision: _lastDecision,
 });
 
+function watchProfileChanges() {
+    const attach = () => {
+        const el = getProfileSelector();
+        if (!el || el.dataset.chakWatched) return !!el;
+        el.dataset.chakWatched = '1';
+        el.addEventListener('change', () => {
+            _profileSwitchUntil = Date.now() + 5000;
+            [100, 600, 1500, 2500].forEach(ms => setTimeout(refreshTopbar, ms));
+        });
+        new MutationObserver(() => refreshTopbar()).observe(el, { childList: true, subtree: true });
+        return true;
+    };
+    if (!attach()) {
+        let tries = 0;
+        const iv = setInterval(() => { if (attach() || ++tries > 40) clearInterval(iv); }, 500);
+    }
+}
+
 (function init() {
-    buildSettingsUI(); buildUI(); updateVisibility();
+    buildSettingsUI(); buildUI(); buildTopbar(); updateVisibility();
+    watchProfileChanges();
+    setTimeout(() => { getTheme(true); refreshTopbar(); }, 1200);
 
     _lastPresetName = null;
     setTimeout(() => { _lastPresetName = getCurrentPresetName(); }, 1500);
@@ -516,8 +822,9 @@ window.chakStatus = () => ({
     const obs = new MutationObserver(() => {
         if (!backdropEl.classList.contains('chak-backdrop--hidden')) {
             const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
-            renderPresetList(q || undefined); updateCurrentLabel();
+            renderPresetList(q || undefined, panelEl); updateCurrentLabel();
         }
+        refreshTopbar();
     });
     for (const id of Object.values(SELECTOR_MAP)) {
         const el = document.querySelector(id);
