@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.5.1';
+const EXT_VERSION = '1.5.2';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -570,7 +570,14 @@ function createItem(preset, t, isFav, folder) {
     }
 
     item.appendChild(nm); item.appendChild(acts);
-    item.addEventListener('click', () => { switchPreset(preset.value); closeDropdown(); });
+    item.addEventListener('click', () => {
+        if (Date.now() < _clickShieldUntil) {
+            console.debug('[착착] 유령 클릭 차단:', preset.name);
+            return;
+        }
+        switchPreset(preset.value);
+        closeDropdown();
+    });
     return item;
 }
 
@@ -612,6 +619,7 @@ function showFolderPicker(anchorEl, presetValue, t, currentFolder) {
 
 // ── 패널 상단 프로필/프리셋 줄 ──
 let dropdownEl = null, _ddOpen = false;
+let _clickShieldUntil = 0;
 
 function refreshBar() {
     if (!panelEl) return;
@@ -652,6 +660,7 @@ function toggleProfileDropdown() {
 }
 
 function closeDropdown() {
+    if (_ddOpen) _clickShieldUntil = Date.now() + 400;
     _ddOpen = false;
     if (dropdownEl) dropdownEl.remove();
     dropdownEl = null;
@@ -739,8 +748,6 @@ function openProfileDropdown() {
             closeDropdown();
         };
         item.addEventListener('click', onPick);
-        // 모바일에서 click 이 안 잡히는 경우 대비
-        item.addEventListener('touchend', onPick, { passive: false });
 
         dropdownEl.appendChild(item);
     });
