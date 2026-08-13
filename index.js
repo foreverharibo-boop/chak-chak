@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.5.0';
+const EXT_VERSION = '1.5.1';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -9,7 +9,7 @@ let _lastDecision = null;
 const WARN_COLOR = '#e0a030';
 
 const defaultTopbar = { enabled: true, showProfile: true, showPreset: true, icons: true, presetRatio: 1.3 };
-const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true, showFab: true, driftWarn: true, driftDelaySec: 3, topbar: structuredClone(defaultTopbar) };
+const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true, showFab: true, activeProfileId: null, driftWarn: true, driftDelaySec: 3, topbar: structuredClone(defaultTopbar) };
 
 function getSettings() {
     const ctx = SillyTavern.getContext();
@@ -20,6 +20,7 @@ function getSettings() {
     if (!s.recentPresets) s.recentPresets = [];
     if (s.recentOpen === undefined) s.recentOpen = true;
     if (s.showFab === undefined) s.showFab = true;
+    if (s.activeProfileId === undefined) s.activeProfileId = null;
     if (s.driftWarn === undefined) s.driftWarn = true;
     if (s.driftDelaySec === undefined) s.driftDelaySec = 3;
     if (!s.topbar) s.topbar = structuredClone(defaultTopbar);
@@ -162,6 +163,26 @@ function getProfileList() {
     return Array.from(s.options)
         .filter(o => o.value !== '' && o.textContent.trim() !== '')
         .map(o => ({ value: o.value, name: o.textContent.trim(), selected: o.selected }));
+}
+
+// 착착에서 마지막으로 고른 프로필 (없으면 ST 활성 프로필)
+function getActiveProfileId() {
+    const saved = getSettings().activeProfileId;
+    if (saved && getProfileRecord(saved)) return saved;
+    const sel = getProfileSelector();
+    const v = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].value : '';
+    return v || null;
+}
+
+function getActiveProfileName() {
+    const id = getActiveProfileId();
+    const rec = id ? getProfileRecord(id) : null;
+    return rec?.name || getCurrentProfileName();
+}
+
+function setActiveProfileId(id) {
+    getSettings().activeProfileId = id;
+    saveSettings();
 }
 
 function getCurrentProfileName() {
@@ -613,7 +634,7 @@ function refreshBar() {
         chip.style.color = t.text;
         chip.querySelector('.chak-chip-icon').style.display = tb.icons ? '' : 'none';
     }
-    pc.querySelector('.chak-chip-label').textContent = getCurrentProfileName();
+    pc.querySelector('.chak-chip-label').textContent = getActiveProfileName();
     const cur = getCurrentPresetName();
     const drift = getSettings().driftWarn && isDrifted();
     sc.querySelector('.chak-chip-label').textContent = (drift ? '⚠ ' : '') + cur;
@@ -658,10 +679,11 @@ function openProfileDropdown() {
         dropdownEl.appendChild(empty);
     }
     const curPreset = getCurrentPresetName();
+    const activeId = getActiveProfileId();
     profiles.forEach(p => {
         const info = inspectProfilePreset(p.value);
-        // 지금 적용된 프리셋의 출처 = 이 프로필이면 '선택됨'으로 표시
-        const isCurrent = info.ok && normName(info.name) === normName(curPreset);
+        const isCurrent = p.value === activeId;              // 착착에서 고른 것
+        const applied = info.ok && normName(info.name) === normName(curPreset);
 
         const item = document.createElement('div');
         item.className = 'chak-prof'
@@ -689,8 +711,13 @@ function openProfileDropdown() {
 
         const sub = document.createElement('div');
         sub.className = 'chak-prof-sub';
-        sub.textContent = info.ok ? info.name : info.reason;
-        sub.style.color = info.ok ? t.text : WARN_COLOR;
+        if (info.ok) {
+            sub.textContent = info.name + (isCurrent && !applied ? '  · 적용 안 됨' : '');
+            sub.style.color = (isCurrent && !applied) ? WARN_COLOR : t.text;
+        } else {
+            sub.textContent = info.reason;
+            sub.style.color = WARN_COLOR;
+        }
         item.appendChild(sub);
 
         item.title = info.ok
@@ -705,6 +732,9 @@ function openProfileDropdown() {
                 sub.style.opacity = '1';
                 return;
             }
+            // 클릭이 닿았다는 걸 먼저 눈으로 보여준다 (프리셋 적용 성패와 무관)
+            setActiveProfileId(p.value);
+            refreshBar();
             applyProfilePreset(p.value);
             closeDropdown();
         };
