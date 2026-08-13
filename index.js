@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.6.7';
+const EXT_VERSION = '1.6.8';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -157,18 +157,25 @@ function switchPreset(value, options = {}) {
     } else {
         profileSave = savePresetToCurrentProfile(getCurrentPresetName());
     }
-    try { renderPresetList(); updateCurrentLabel(); }
-    catch (e) { dlog('❌ 목록 갱신 중 예외:', e?.message); }
+    // 클릭 이벤트가 document까지 전파되기 전에 누른 항목을 지우면
+    // 바깥 클릭으로 오인되어 패널이 닫힌다. 이벤트가 끝난 뒤 목록을 갱신한다.
+    setTimeout(() => {
+        try { renderPresetList(); updateCurrentLabel(); refreshBar(); }
+        catch (e) { dlog('❌ 목록 갱신 중 예외:', e?.message); }
+    }, 0);
     try {
         const name = s.options[s.selectedIndex]?.text ?? value;
-        if (source === 'profile-load') {
-            const profileName = options.profileName || getActiveProfileName();
-            showToast(`🔌 ${profileName} 연결 프로필의 "${name}" 적용됨`);
-        } else if (profileSave?.ok) {
-            showToast(`💾 ${profileSave.profileName} 연결 프로필에 "${profileSave.presetName}" 저장됨`);
-        } else {
-            showToast(`🎚 현재 프리셋이 "${name}"으로 변경됨`);
-        }
+        // ST의 change 처리와 현재 클릭 이벤트가 모두 끝난 뒤 독립적으로 표시한다.
+        setTimeout(() => {
+            if (source === 'profile-load') {
+                const profileName = options.profileName || getActiveProfileName();
+                showToast(`🔌 ${profileName} 연결 프로필의 "${name}" 적용됨`);
+            } else if (profileSave?.ok) {
+                showToast(`💾 ${profileSave.profileName} 연결 프로필에 "${profileSave.presetName}" 저장됨`);
+            } else {
+                showToast(`🎚 현재 프리셋이 "${name}"으로 변경됨`);
+            }
+        }, 40);
     } catch (e) { dlog('❌ showToast 예외:', e?.message); }
     setTimeout(() => {
         _lastPresetName = getCurrentPresetName();
@@ -396,8 +403,10 @@ async function applyProfilePreset(key) {
 }
 
 function showToast(name, persistent, action) {
-    document.querySelector('.chak-toast')?.remove();
+    dlog('토스트 표시:', name);
+    document.querySelector('#chak-toast-live')?.remove();
     const toast = document.createElement('div');
+    toast.id = 'chak-toast-live';
     toast.className = 'chak-toast' + (persistent ? ' chak-toast--warn' : '');
     const label = persistent ? `⚠️ ${name}` : `착! → ${name}`;
 
@@ -412,6 +421,8 @@ function showToast(name, persistent, action) {
     toast.style.borderColor = persistent ? WARN_COLOR : t.border;
 
     const dismiss = () => {
+        toast.style.removeProperty('opacity');
+        toast.style.removeProperty('transform');
         toast.classList.remove('chak-toast--visible');
         setTimeout(() => toast.remove(), 300);
     };
@@ -432,11 +443,26 @@ function showToast(name, persistent, action) {
     }
     toast.addEventListener('click', dismiss);
 
-    try { document.documentElement.appendChild(toast); } catch (e) { /* noop */ }
-    if (!toast.isConnected) document.body.appendChild(toast);
+    // 테마/확장 CSS와 패널 stacking context에 가려지지 않는 독립 레이어.
+    const host = document.body || document.documentElement;
+    host.appendChild(toast);
+    toast.style.setProperty('display', 'flex', 'important');
+    toast.style.setProperty('position', 'fixed', 'important');
+    toast.style.setProperty('left', '50%', 'important');
+    toast.style.setProperty('bottom', '80px', 'important');
+    toast.style.setProperty('z-index', '2147483647', 'important');
+    toast.style.setProperty('visibility', 'visible', 'important');
+    toast.style.setProperty('background-color', t.bg, 'important');
+    toast.style.setProperty('color', persistent ? WARN_COLOR : t.text, 'important');
+    toast.style.setProperty('border', `1px solid ${persistent ? WARN_COLOR : t.border}`, 'important');
+    toast.style.setProperty('max-width', 'calc(100vw - 32px)', 'important');
 
-    requestAnimationFrame(() => toast.classList.add('chak-toast--visible'));
-    if (!persistent) setTimeout(dismiss, 1500);
+    requestAnimationFrame(() => {
+        toast.classList.add('chak-toast--visible');
+        toast.style.setProperty('opacity', '1', 'important');
+        toast.style.setProperty('transform', 'translateX(-50%) translateY(0)', 'important');
+    });
+    if (!persistent) setTimeout(dismiss, 2500);
 }
 
 // ── Favorites & Folders ──
@@ -606,7 +632,9 @@ function buildUI() {
     document.documentElement.appendChild(backdropEl);
 
     document.addEventListener('click', (e) => {
-        if (!panelEl.contains(e.target) && !fabEl.contains(e.target) && !backdropEl.contains(e.target))
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+        const startedInside = path.includes(panelEl) || path.includes(fabEl) || path.includes(backdropEl);
+        if (!startedInside && !panelEl.contains(e.target) && !fabEl.contains(e.target) && !backdropEl.contains(e.target))
             if (!backdropEl.classList.contains('chak-backdrop--hidden')) closePanel();
     });
 }
@@ -735,7 +763,10 @@ function createItem(preset, t, isFav, folder) {
     }
 
     item.appendChild(nm); item.appendChild(acts);
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
+        // 목록 재렌더 뒤 document의 바깥 클릭 판정으로 넘어가지 않게 한다.
+        e.preventDefault();
+        e.stopPropagation();
         dlog('프리셋 탭(패널):', preset.name);
         const saveToProfile = getSettings().savePresetToSelectedProfile;
         switchPreset(preset.value, { source: saveToProfile ? 'profile-save' : 'current-preset' });
