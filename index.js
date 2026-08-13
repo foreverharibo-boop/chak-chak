@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.6.6';
+const EXT_VERSION = '1.6.7';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -148,10 +148,14 @@ function switchPreset(value, options = {}) {
     if (_skipAutoSaveOnce) {
         _skipAutoSaveOnce = false;
         dlog('프로필 프리셋 저장 건너뜀: 프로필에 저장된 프리셋 불러오기 중');
+    } else if (source === 'profile-save') {
+        profileSave = savePresetToActiveProfile(getCurrentPresetName());
+    } else if (source === 'current-preset') {
+        profileSave = savePresetToCurrentProfile(getCurrentPresetName());
     } else if (getSettings().savePresetToSelectedProfile) {
         profileSave = savePresetToActiveProfile(getCurrentPresetName());
     } else {
-        dlog('프로필 프리셋 저장 건너뜀: 자동 저장 꺼짐');
+        profileSave = savePresetToCurrentProfile(getCurrentPresetName());
     }
     try { renderPresetList(); updateCurrentLabel(); }
     catch (e) { dlog('❌ 목록 갱신 중 예외:', e?.message); }
@@ -214,6 +218,16 @@ function getCurrentProfileName() {
     return txt || '(없음)';
 }
 
+function getCurrentProfileId() {
+    try {
+        const selected = SillyTavern.getContext().extensionSettings?.connectionManager?.selectedProfile;
+        if (selected && getProfileRecord(selected)) return selected;
+    } catch (e) { /* noop */ }
+    const s = getProfileSelector();
+    const value = s && s.selectedIndex >= 0 ? s.options[s.selectedIndex]?.value : '';
+    return value || null;
+}
+
 let _profileSwitchUntil = 0;
 let _skipAutoSaveOnce = false;
 
@@ -229,11 +243,10 @@ function getProfileRecord(key) {
 // 착착 상단에서 고른 프로필에 프리셋 이름만 저장한다.
 // ST의 업데이트 버튼은 #connection_profiles에서 선택된 프로필 전체를 갱신하므로,
 // 착착의 activeProfileId와 ST 선택값이 다르면 엉뚱한 프로필을 바꿀 수 있다.
-function savePresetToActiveProfile(presetName) {
-    const profileId = getActiveProfileId();
+function savePresetToProfile(profileId, presetName, targetLabel) {
     const rec = profileId ? getProfileRecord(profileId) : null;
     if (!rec) {
-        dlog('프로필 프리셋 저장 안 함: 선택된 연결 프로필 없음');
+        dlog('프로필 프리셋 저장 안 함:', targetLabel, '연결 프로필 없음');
         return { ok: false, reason: 'no-profile' };
     }
     if (Array.isArray(rec.exclude) && rec.exclude.includes('preset')) {
@@ -259,6 +272,14 @@ function savePresetToActiveProfile(presetName) {
         `"${before || '(없음)'}" → "${name}"`,
     );
     return { ok, profileName: rec.name, presetName: name, before };
+}
+
+function savePresetToActiveProfile(presetName) {
+    return savePresetToProfile(getActiveProfileId(), presetName, '상단에서 선택한');
+}
+
+function savePresetToCurrentProfile(presetName) {
+    return savePresetToProfile(getCurrentProfileId(), presetName, '현재 연결된');
 }
 
 // 프리셋 이름이 지금 API의 프리셋 목록에 실제로 있는지 (ST findPreset 과 같은 방식: option 텍스트 비교)
@@ -518,8 +539,8 @@ function buildUI() {
             </div>
         </div>
         <div class="chak-bar">
-            <label class="chak-profile-save-toggle" title="선택한 연결 프로필에 프리셋 자동 저장">
-                <input type="checkbox" class="chak-profile-save-checkbox" aria-label="선택한 연결 프로필에 프리셋 자동 저장" />
+            <label class="chak-profile-save-toggle" title="프리셋 저장 대상 선택">
+                <input type="checkbox" class="chak-profile-save-checkbox" aria-label="상단 선택 프로필에 저장할지 선택" />
             </label>
             <div class="chak-chip chak-chip--profile">
                 <span class="chak-chip-icon">🔌</span>
@@ -570,8 +591,8 @@ function buildUI() {
         dlog('선택 프로필 프리셋 자동 저장:', enabled ? '켜짐' : '꺼짐');
         refreshBar();
         showToast(enabled
-            ? '💾 선택 프로필 자동 저장 켜짐'
-            : '🔓 자동 저장 꺼짐 — 현재 프리셋만 변경');
+            ? '☑ 상단 선택 프로필에 저장'
+            : '☐ 현재 연결 프로필에 저장');
     });
     // 드롭다운이 닫힌 직후의 잔여/합성 클릭이 패널 아래 요소를 누르는 것을 차단
     panelEl.addEventListener('click', (e) => {
@@ -843,8 +864,8 @@ function refreshBar() {
     saveToggle.style.display = tb.showProfile ? '' : 'none';
     saveCheck.checked = getSettings().savePresetToSelectedProfile;
     saveToggle.title = saveCheck.checked
-        ? '자동 저장 켜짐 — 선택한 연결 프로필에 프리셋을 저장합니다'
-        : '자동 저장 꺼짐 — 현재 프리셋만 변경합니다';
+        ? '체크됨 — 상단에서 선택한 연결 프로필에 프리셋을 저장합니다'
+        : '체크 해제 — 현재 실제 연결 프로필에 프리셋을 저장합니다';
     pc.style.display = tb.showProfile ? '' : 'none';
     sc.style.display = tb.showPreset ? '' : 'none';
     sc.style.flexGrow = String(tb.presetRatio);
