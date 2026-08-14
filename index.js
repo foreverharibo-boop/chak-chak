@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.6.10';
+const EXT_VERSION = '1.6.11';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -128,10 +128,9 @@ function switchPreset(value, options = {}) {
     const source = options.source || 'preset-list';
     const s = getPresetSelector();
     if (!s) { dlog('switchPreset: 프리셋 select 없음! api=', getMainApi()); return; }
+    const beforePresetName = getCurrentPresetName();
     dlog('switchPreset:', value);
-    _suppressChangeToast = Date.now();
-    _lastUserSelectTouch = Date.now();
-    _lastTouchSource = 'chak-panel';
+    _lastTouchSource = source;
     try {
         s.value = value;
         if (typeof $ !== 'undefined') {
@@ -143,12 +142,17 @@ function switchPreset(value, options = {}) {
         dlog('❌ trigger 중 예외:', e?.message);
     }
     dlog('  trigger 후 현재:', `"${getCurrentPresetName()}"`);
+    if (normName(getCurrentPresetName()) !== normName(beforePresetName)) {
+        markOwnPresetChange(getCurrentPresetName(), source);
+    }
 
     let profileSave = null;
     let nativeProfileSaveQueued = false;
     if (_skipAutoSaveOnce) {
         _skipAutoSaveOnce = false;
         dlog('프로필 프리셋 저장 건너뜀: 프로필에 저장된 프리셋 불러오기 중');
+    } else if (source === 'drift-restore') {
+        dlog('프로필 프리셋 저장 건너뜀: 자동 변경 프리셋 되돌리기 중');
     } else if (source === 'profile-save') {
         profileSave = savePresetToActiveProfile(getCurrentPresetName());
     } else if (source === 'current-preset') {
@@ -171,6 +175,8 @@ function switchPreset(value, options = {}) {
             if (source === 'profile-load') {
                 const profileName = options.profileName || getActiveProfileName();
                 showToast(`🔌 ${profileName} 연결 프로필의 "${name}" 적용됨`);
+            } else if (source === 'drift-restore') {
+                showToast(`🎚 현재 연결 프로필의 "${name}"으로 되돌림`);
             } else if (nativeProfileSaveQueued) {
                 // 현재 연결 프로필 모드는 SillyTavern 원본 저장 버튼이
                 // 자체 성공 토스트를 띄우므로 착착 토스트를 겹쳐 띄우지 않는다.
@@ -183,9 +189,7 @@ function switchPreset(value, options = {}) {
         }, 40);
     } catch (e) { dlog('❌ showToast 예외:', e?.message); }
     setTimeout(() => {
-        _lastPresetName = getCurrentPresetName();
-        _userPreset = _lastPresetName;
-        clearDrift(); refreshBar();
+        refreshBar();
     }, 600);
     try { refreshBar(); } catch (e) { dlog('❌ refreshBar 예외:', e?.message); }
     dlog('switchPreset 끝:', `"${getCurrentPresetName()}"`);
@@ -402,8 +406,7 @@ async function applyProfilePreset(key) {
             try {
                 const cmd = SillyTavern.getContext()?.SlashCommandParser?.commands?.['preset'];
                 if (cmd) {
-                    _suppressChangeToast = Date.now();
-                    _lastUserSelectTouch = Date.now();
+                    markOwnPresetChange(info.name, 'profile-load-retry');
                     await cmd.callback({}, info.name);
                     const now2 = getCurrentPresetName();
                     dlog('재시도(/preset):', `현재 "${now2}"`, now2 === hit.name ? 'OK' : '실패');
@@ -420,8 +423,7 @@ async function applyProfilePreset(key) {
     try {
         const cmd = SillyTavern.getContext()?.SlashCommandParser?.commands?.['preset'];
         if (!cmd) { showToast(`프리셋 "${info.name}" 을(를) 못 찾음`, true); _skipAutoSaveOnce = false; return; }
-        _suppressChangeToast = Date.now();
-        _lastUserSelectTouch = Date.now();
+        markOwnPresetChange(info.name, 'profile-load-fuzzy');
         await cmd.callback({}, info.name);
     } catch (e) {
         console.error('[착착] 프리셋 적용 실패', e);
@@ -436,17 +438,16 @@ async function applyProfilePreset(key) {
     else showToast(`"${info.name}" 을(를) 적용하지 못했어요`, true);
 
     [200, 700, 1500].forEach(ms => setTimeout(() => {
-        _lastPresetName = getCurrentPresetName();
-        _userPreset = _lastPresetName;
-        clearDrift(); refreshBar(); updateCurrentLabel();
+        refreshBar(); updateCurrentLabel();
     }, ms));
 }
 
-function showToast(name, persistent, action) {
+function showToast(name, persistent, action, options = {}) {
     dlog('토스트 표시:', name);
-    document.querySelector('#chak-toast-live')?.remove();
+    const toastId = options.id || 'chak-toast-live';
+    document.querySelector(`#${toastId}`)?.remove();
     const toast = document.createElement('div');
-    toast.id = 'chak-toast-live';
+    toast.id = toastId;
     toast.className = 'chak-toast' + (persistent ? ' chak-toast--warn' : '');
     const label = persistent ? `⚠️ ${name}` : `착! → ${name}`;
 
@@ -489,7 +490,7 @@ function showToast(name, persistent, action) {
     toast.style.setProperty('display', 'flex', 'important');
     toast.style.setProperty('position', 'fixed', 'important');
     toast.style.setProperty('left', '50%', 'important');
-    toast.style.setProperty('bottom', '80px', 'important');
+    toast.style.setProperty('bottom', options.bottom || '80px', 'important');
     toast.style.setProperty('z-index', '2147483647', 'important');
     toast.style.setProperty('visibility', 'visible', 'important');
     toast.style.setProperty('background-color', t.bg, 'important');
@@ -1135,76 +1136,172 @@ function updateVisibility() {
 }
 
 let _lastPresetName = null;
-let _suppressChangeToast = 0;
-let _userPreset = null;     // 사용자가 마지막으로 '의도한' 프리셋
+let _pendingOwnPresetChange = null;
+let _lastTrustedPresetInput = 0;
+let _userPreset = null;     // 현재 실제 연결 프로필에 저장된 기준 프리셋
 let _driftSince = 0;
 let _driftWarned = false;
+let _externalDrift = null;
 
-function clearDrift() { _driftSince = 0; _driftWarned = false; }
-function isDrifted() { return !!(_userPreset && getCurrentPresetName() !== _userPreset); }
+function clearDrift() {
+    _driftSince = 0;
+    _driftWarned = false;
+    _externalDrift = null;
+}
+
+function getCurrentProfilePresetInfo() {
+    const profileId = getCurrentProfileId();
+    const info = profileId ? inspectProfilePreset(profileId) : { ok: false, reason: '현재 연결 프로필 없음' };
+    return { ...info, profileId };
+}
+
+function markOwnPresetChange(name, source) {
+    const normalized = normName(name);
+    if (!normalized || normalized === normName('(없음)')) return;
+    _pendingOwnPresetChange = {
+        name: normalized,
+        displayName: String(name),
+        source: source || 'chak-chak',
+        until: Date.now() + 5000,
+    };
+    dlog('착착 직접 변경 표시:', `"${name}"`, `source=${_pendingOwnPresetChange.source}`);
+}
+
+function consumeOwnPresetChange(name) {
+    const pending = _pendingOwnPresetChange;
+    if (!pending) return null;
+    if (Date.now() > pending.until) {
+        _pendingOwnPresetChange = null;
+        return null;
+    }
+    if (pending.name !== normName(name)) return null;
+    _pendingOwnPresetChange = null;
+    return pending;
+}
+
+function isDrifted() {
+    return !!(_driftWarned && _externalDrift);
+}
+
+function refreshPresetChangeUI() {
+    if (backdropEl && !backdropEl.classList.contains('chak-backdrop--hidden')) {
+        const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
+        renderPresetList(q || undefined, panelEl);
+        updateCurrentLabel();
+    }
+    refreshBar();
+}
 
 function checkPresetChanged() {
     const name = getCurrentPresetName();
     if (!name || name === '(없음)') return;
 
-    if (_lastPresetName === null) { _lastPresetName = name; _userPreset = name; return; }
+    const now = Date.now();
+    const settings = getSettings();
+    const profileInfo = getCurrentProfilePresetInfo();
+    const expected = profileInfo.ok ? profileInfo.name : null;
 
-    if (name !== _lastPresetName) {
-        const gap = Date.now() - _lastUserSelectTouch;
-        const userDriven = gap < 1500;
-        _lastDecision = {
-            from: _lastPresetName, to: name,
-            gapMs: gap, source: _lastTouchSource,
-            userDriven, at: new Date().toLocaleTimeString(),
-        };
+    if (_lastPresetName === null) {
         _lastPresetName = name;
-        if (userDriven) { _userPreset = name; clearDrift(); }
-        if (backdropEl && !backdropEl.classList.contains('chak-backdrop--hidden')) {
-            const q = panelEl.querySelector('.chak-search')?.value?.trim().toLowerCase();
-            renderPresetList(q || undefined, panelEl); updateCurrentLabel();
+        _userPreset = expected || name;
+        consumeOwnPresetChange(name);
+        return;
+    }
+
+    if (normName(name) !== normName(_lastPresetName)) {
+        const previous = _lastPresetName;
+        const ownChange = consumeOwnPresetChange(name);
+        const manualChange = !ownChange && (now - _lastTrustedPresetInput < 1500);
+        const profileLoadChange = !ownChange && !manualChange && now < _profileSwitchUntil;
+        const source = ownChange?.source || (manualChange ? _lastTouchSource : (profileLoadChange ? 'connection-profile-load' : 'external-extension'));
+
+        _lastPresetName = name;
+        _lastDecision = {
+            from: previous,
+            to: name,
+            source,
+            ownChange: !!ownChange,
+            manualChange,
+            externalChange: !ownChange && !manualChange && !profileLoadChange,
+            expectedPreset: expected,
+            currentProfile: profileInfo.rec?.name || getCurrentProfileName(),
+            at: new Date().toLocaleTimeString(),
+        };
+        refreshPresetChangeUI();
+
+        if (!settings.driftWarn || ownChange || manualChange || profileLoadChange) {
+            _userPreset = expected || name;
+            clearDrift();
+            dlog('프리셋 변경 경고 제외:', source, `"${previous}" → "${name}"`);
+            return;
         }
+
+        // 현재 실제 연결 프로필에 저장된 프리셋이 있을 때만 외부 자동 변경을 경고한다.
+        if (!expected) {
+            clearDrift();
+            dlog('외부 자동 변경 경고 안 함:', profileInfo.reason || '현재 프로필 기준 프리셋 없음');
+            return;
+        }
+        _userPreset = expected;
+        if (normName(name) === normName(expected)) {
+            clearDrift();
+            dlog('외부 변경이 현재 프로필 기준 프리셋과 같아서 경고 안 함:', `"${name}"`);
+            return;
+        }
+
+        _externalDrift = {
+            profileId: profileInfo.profileId,
+            profileName: profileInfo.rec?.name || getCurrentProfileName(),
+            expected,
+            current: name,
+            detectedAt: now,
+        };
+        _driftSince = now;
+        _driftWarned = false;
+        dlog('외부 자동 프리셋 변경 감지:', JSON.stringify(_externalDrift));
         refreshBar();
     }
 
-    // ── 이탈 감지: 내가 고른 프리셋과 다른 상태가 계속되면 경고 ──
-    const s = getSettings();
-    if (!s.driftWarn) { clearDrift(); return; }
-    if (Date.now() < _profileSwitchUntil) return;
-    if (!_userPreset) { _userPreset = name; return; }
+    if (!settings.driftWarn || !_externalDrift || _driftWarned) return;
 
-    if (name !== _userPreset) {
-        if (!_driftSince) { _driftSince = Date.now(); refreshBar(); }
-        else if (!_driftWarned && Date.now() - _driftSince >= (s.driftDelaySec * 1000)) {
-            _driftWarned = true;
-            showDriftToast(name);
-            refreshBar();
-        }
-    } else if (_driftSince) {
-        clearDrift(); refreshBar();
+    // 경고 대기 중 프로필/프리셋이 다시 달라졌다면 다음 change 판정에 맡긴다.
+    const liveProfile = getCurrentProfilePresetInfo();
+    if (!liveProfile.ok
+        || liveProfile.profileId !== _externalDrift.profileId
+        || normName(getCurrentPresetName()) !== normName(_externalDrift.current)
+        || normName(liveProfile.name) === normName(getCurrentPresetName())) {
+        clearDrift();
+        refreshBar();
+        return;
+    }
+
+    if (now - _driftSince >= settings.driftDelaySec * 1000) {
+        _driftWarned = true;
+        showExternalPresetToast(_externalDrift);
+        refreshBar();
     }
 }
 
-function showDriftToast(current) {
-    const target = _userPreset;
-    showToast(`프리셋이 "${current}" 인 채예요 (원래: ${target})`, true, {
+function showExternalPresetToast(drift) {
+    showToast(`${drift.profileName} 연결 프로필은 "${drift.expected}"인데 다른 확장이 "${drift.current}"으로 바꿨어요`, true, {
         label: '되돌리기',
         onClick: () => {
-            const hit = getPresetList().find(p => p.name === target)
-                || getPresetList().find(p => p.name.trim() === String(target).trim());
-            if (hit) { switchPreset(hit.value); }
-            else showToast(`"${target}" 을(를) 못 찾음`, true);
+            const hit = findPresetByName(drift.expected) || findPresetLoose(drift.expected);
+            if (hit) switchPreset(hit.value, { source: 'drift-restore' });
+            else showToast(`"${drift.expected}" 을(를) 못 찾음`, true);
         },
-    });
+    }, { id: 'chak-drift-toast', bottom: '136px' });
 }
 
 function watchPresetChanges() {
     for (const id of Object.values(SELECTOR_MAP)) {
         const el = document.querySelector(id);
         if (!el) continue;
-        // 진짜 사용자 조작만 기록 (isTrusted=false는 스크립트가 만든 가짜 이벤트)
+        // 진짜 사용자 조작만 기록한다. 착착 변경은 별도 토큰으로 구분한다.
         const mark = (e) => {
-            if (!e || e.isTrusted) {
-                _lastUserSelectTouch = Date.now();
+            if (e?.isTrusted) {
+                _lastTrustedPresetInput = Date.now();
+                _lastUserSelectTouch = _lastTrustedPresetInput;
                 _lastTouchSource = e ? e.type : 'manual';
             }
         };
@@ -1225,11 +1322,13 @@ function watchPresetChanges() {
 window.chakTest = () => showToast('테스트 경고입니다', true, { label: '되돌리기', onClick: () => console.log('[착착] 되돌리기 눌림') });
 window.chakDrift = () => ({
     watching: getSettings().driftWarn,
-    userPreset: _userPreset,
+    expectedPreset: _userPreset,
     current: getCurrentPresetName(),
     drifted: isDrifted(),
     driftForMs: _driftSince ? Date.now() - _driftSince : 0,
     warned: _driftWarned,
+    pendingOwnChange: _pendingOwnPresetChange,
+    externalDrift: _externalDrift,
     lastChange: _lastDecision,
 });
 window.chakProfiles = () => getProfileList().map(p => {
