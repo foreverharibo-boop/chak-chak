@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.6.8';
+const EXT_VERSION = '1.6.10';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -145,17 +145,18 @@ function switchPreset(value, options = {}) {
     dlog('  trigger 후 현재:', `"${getCurrentPresetName()}"`);
 
     let profileSave = null;
+    let nativeProfileSaveQueued = false;
     if (_skipAutoSaveOnce) {
         _skipAutoSaveOnce = false;
         dlog('프로필 프리셋 저장 건너뜀: 프로필에 저장된 프리셋 불러오기 중');
     } else if (source === 'profile-save') {
         profileSave = savePresetToActiveProfile(getCurrentPresetName());
     } else if (source === 'current-preset') {
-        profileSave = savePresetToCurrentProfile(getCurrentPresetName());
+        nativeProfileSaveQueued = queueCurrentProfileUpdate();
     } else if (getSettings().savePresetToSelectedProfile) {
         profileSave = savePresetToActiveProfile(getCurrentPresetName());
     } else {
-        profileSave = savePresetToCurrentProfile(getCurrentPresetName());
+        nativeProfileSaveQueued = queueCurrentProfileUpdate();
     }
     // 클릭 이벤트가 document까지 전파되기 전에 누른 항목을 지우면
     // 바깥 클릭으로 오인되어 패널이 닫힌다. 이벤트가 끝난 뒤 목록을 갱신한다.
@@ -170,8 +171,12 @@ function switchPreset(value, options = {}) {
             if (source === 'profile-load') {
                 const profileName = options.profileName || getActiveProfileName();
                 showToast(`🔌 ${profileName} 연결 프로필의 "${name}" 적용됨`);
+            } else if (nativeProfileSaveQueued) {
+                // 현재 연결 프로필 모드는 SillyTavern 원본 저장 버튼이
+                // 자체 성공 토스트를 띄우므로 착착 토스트를 겹쳐 띄우지 않는다.
+                dlog('현재 연결 프로필 저장: SillyTavern 원본 토스트 대기 중');
             } else if (profileSave?.ok) {
-                showToast(`💾 ${profileSave.profileName} 연결 프로필에 "${profileSave.presetName}" 저장됨`);
+                showNativeProfileSaveToast(profileSave);
             } else {
                 showToast(`🎚 현재 프리셋이 "${name}"으로 변경됨`);
             }
@@ -285,8 +290,43 @@ function savePresetToActiveProfile(presetName) {
     return savePresetToProfile(getActiveProfileId(), presetName, '상단에서 선택한');
 }
 
-function savePresetToCurrentProfile(presetName) {
-    return savePresetToProfile(getCurrentProfileId(), presetName, '현재 연결된');
+// 하단의 "현재 프리셋 변경"은 예전 착착 동작을 그대로 사용한다.
+// 프리셋 change 처리가 끝난 뒤 SillyTavern 연결 프로필의 원본 업데이트 버튼을
+// 실제로 눌러 API/모델/키/프리셋을 저장하고 원본 성공 토스트까지 띄운다.
+function queueCurrentProfileUpdate() {
+    const profileId = getCurrentProfileId();
+    const profile = profileId ? getProfileRecord(profileId) : null;
+    dlog('현재 연결 프로필 원본 저장 예약:', profile?.name || profileId || '(없음)');
+
+    setTimeout(() => {
+        const saveBtn = document.getElementById('update_connection_profile');
+        if (!saveBtn) {
+            dlog('❌ 현재 연결 프로필 저장 실패: #update_connection_profile 없음');
+            showToast('SillyTavern 연결 프로필 저장 버튼을 찾지 못했어요', true);
+            return;
+        }
+        dlog('현재 연결 프로필 원본 저장 버튼 클릭:', profile?.name || profileId || '(없음)');
+        saveBtn.click();
+    }, 300);
+
+    return true;
+}
+
+// 상단에서 따로 고른 프로필은 현재 연결 프로필과 다를 수 있으므로
+// ST 업데이트 버튼을 누르지 않고 프리셋만 저장한다. 저장 알림은
+// 하단 원본 저장과 같은 SillyTavern toastr 레이어로 표시한다.
+function showNativeProfileSaveToast(result) {
+    const message = `${result.profileName} 연결 프로필에 "${result.presetName}" 프리셋 저장됨`;
+    try {
+        if (globalThis.toastr?.success) {
+            globalThis.toastr.success(message, '', { timeOut: 1500 });
+            dlog('SillyTavern 기본 저장 토스트 표시:', message);
+            return;
+        }
+    } catch (e) {
+        dlog('❌ SillyTavern 기본 저장 토스트 실패:', e?.message);
+    }
+    showToast(`💾 ${message}`);
 }
 
 // 프리셋 이름이 지금 API의 프리셋 목록에 실제로 있는지 (ST findPreset 과 같은 방식: option 텍스트 비교)
