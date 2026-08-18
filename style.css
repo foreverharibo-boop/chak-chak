@@ -1,5 +1,26 @@
 /* 착착 (Chak-Chak) */
 
+.chak-settings {
+    margin: 0;
+}
+
+.chak-settings .chak-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.chak-settings .chak-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.25em;
+    min-width: 0;
+}
+
+.chak-settings .chak-heading > span {
+    font-size: 1em;
+}
+
 #chak-fab {
     display: inline-flex;
     align-items: center;

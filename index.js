@@ -1072,7 +1072,8 @@ function openProfileDropdown() {
 // ── Settings ──
 function buildSettingsUI() {
     const html = `<div class="chak-settings"><div class="inline-drawer">
-        <div class="inline-drawer-toggle inline-drawer-header"><b>착착 ⚡ Chak-Chak</b><span class="chak-ver">v${EXT_VERSION}</span>
+        <div class="inline-drawer-toggle inline-drawer-header chak-drawer-header">
+        <div class="chak-heading"><span aria-hidden="true">⚡</span><b>착착</b></div>
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
         <div class="inline-drawer-content">
         <label class="checkbox_label"><input type="checkbox" id="chak_enabled" /><span>활성화</span></label>
