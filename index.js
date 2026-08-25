@@ -1,6 +1,6 @@
 // 착착 (Chak-Chak) — Quick Preset Switcher with Folders
 const extensionName = 'chak-chak';
-const EXT_VERSION = '1.6.11';
+const EXT_VERSION = '1.6.12';
 const settingsKey = 'chak_chak';
 
 let _lastUserSelectTouch = 0;
@@ -9,7 +9,7 @@ let _lastDecision = null;
 const WARN_COLOR = '#e0a030';
 
 const defaultTopbar = { enabled: true, showProfile: true, showPreset: true, icons: true, presetRatio: 1.3 };
-const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true, showFab: true, activeProfileId: null, savePresetToSelectedProfile: true, driftWarn: true, driftDelaySec: 3, topbar: structuredClone(defaultTopbar) };
+const defaultSettings = { enabled: true, favorites: [], folders: {}, folderOpenState: {}, recentPresets: [], recentOpen: true, showFab: true, activeProfileId: null, savePresetToSelectedProfile: true, driftWarn: true, driftDelaySec: 3, presetStorageVersion: 2, topbar: structuredClone(defaultTopbar) };
 
 function getSettings() {
     const ctx = SillyTavern.getContext();
@@ -123,6 +123,30 @@ function getCurrentPresetName() { const s = getPresetSelector(); return (s && s.
 function getPresetList() {
     const s = getPresetSelector();
     return s ? Array.from(s.options).map(o => ({ value: o.value, name: o.text, selected: o.selected })) : [];
+}
+
+// option.value는 SillyTavern이 프리셋 목록을 다시 만들 때 바뀔 수 있다.
+// 폴더/즐겨찾기는 목록 순번이 아닌 프리셋 이름으로 고정 저장한다.
+const PRESET_KEY_PREFIX = 'name:';
+function presetStorageKey(presetOrName) {
+    const name = typeof presetOrName === 'string' ? presetOrName : presetOrName?.name;
+    return PRESET_KEY_PREFIX + String(name ?? '').normalize('NFC');
+}
+function migratePresetStorage(presets) {
+    const s = getSettings();
+    if (s.presetStorageVersion === 2) return;
+    const byValue = new Map(presets.map(p => [String(p.value), presetStorageKey(p)]));
+    const convert = value => {
+        const raw = String(value ?? '');
+        if (raw.startsWith(PRESET_KEY_PREFIX)) return raw;
+        return byValue.get(raw) || raw;
+    };
+    s.favorites = [...new Set((s.favorites || []).map(convert))];
+    for (const name of Object.keys(s.folders || {})) {
+        s.folders[name] = [...new Set((s.folders[name] || []).map(convert))];
+    }
+    s.presetStorageVersion = 2;
+    saveSettings();
 }
 function switchPreset(value, options = {}) {
     const source = options.source || 'preset-list';
@@ -520,19 +544,19 @@ function setFolderOpen(name, open) {
     saveSettings();
 }
 
-function isFavorite(v) { return getSettings().favorites.includes(v); }
-function toggleFavorite(v) {
-    const s = getSettings(); const i = s.favorites.indexOf(v);
-    if (i >= 0) s.favorites.splice(i, 1); else s.favorites.push(v);
+function isFavorite(key) { return getSettings().favorites.includes(key); }
+function toggleFavorite(key) {
+    const s = getSettings(); const i = s.favorites.indexOf(key);
+    if (i >= 0) s.favorites.splice(i, 1); else s.favorites.push(key);
     saveSettings(); renderPresetList();
 }
 function getFolders() { return getSettings().folders; }
 function addFolder(name) { const s = getSettings(); if (!s.folders[name]) { s.folders[name] = []; saveSettings(); } }
 function removeFolder(name) { delete getSettings().folders[name]; saveSettings(); }
-function getPresetFolder(value) {
+function getPresetFolder(key) {
     const folders = getFolders();
     for (const [fname, members] of Object.entries(folders)) {
-        if (members.includes(value)) return fname;
+        if (members.includes(key)) return fname;
     }
     return null;
 }
@@ -575,8 +599,8 @@ function moveFolderDown(name) {
     s.folders = newFolders;
     saveSettings();
 }
-function addToFolder(f, v) { const s = getSettings(); if (!s.folders[f]) s.folders[f] = []; if (!s.folders[f].includes(v)) { s.folders[f].push(v); saveSettings(); } }
-function removeFromFolder(f, v) { const s = getSettings(); if (s.folders[f]) { s.folders[f] = s.folders[f].filter(x => x !== v); saveSettings(); } }
+function addToFolder(f, key) { const s = getSettings(); if (!s.folders[f]) s.folders[f] = []; if (!s.folders[f].includes(key)) { s.folders[f].push(key); saveSettings(); } }
+function removeFromFolder(f, key) { const s = getSettings(); if (s.folders[f]) { s.folders[f] = s.folders[f].filter(x => x !== key); saveSettings(); } }
 
 // ── UI ──
 let panelEl = null, backdropEl = null, fabEl = null;
@@ -708,6 +732,7 @@ function renderPresetList(searchQuery, root) {
     if (!root) return;
     _renderRoot = root;
     let presets = getPresetList();
+    migratePresetStorage(presets);
     const settings = getSettings(), t = getTheme();
     const foldersC = root.querySelector('.chak-list--folders');
     const favC = root.querySelector('.chak-list--favorites');
@@ -723,11 +748,11 @@ function renderPresetList(searchQuery, root) {
     // ── 즐겨찾기 ──
     favC.innerHTML = '';
     if (!searchQuery) {
-        const favs = presets.filter(p => settings.favorites.includes(p.value));
+        const favs = presets.filter(p => settings.favorites.includes(presetStorageKey(p)));
         if (favs.length) {
             const lb = document.createElement('div'); lb.className = 'chak-section-label'; lb.textContent = '⭐ 즐겨찾기'; lb.style.color = t.text;
             favC.appendChild(lb);
-            favs.forEach(p => favC.appendChild(createItem(p, t, true, getPresetFolder(p.value))));
+            favs.forEach(p => favC.appendChild(createItem(p, t, true, getPresetFolder(presetStorageKey(p)))));
         }
     }
 
@@ -755,7 +780,7 @@ function renderPresetList(searchQuery, root) {
             const ct = document.createElement('div'); ct.className = 'chak-folder-content';
             ct.style.display = isFolderOpen(fname) ? '' : 'none';
             hd.addEventListener('click', (e) => { if (e.target === hd || e.target.classList.contains('chak-folder-name')) { setFolderOpen(fname, !isFolderOpen(fname)); ct.style.display = isFolderOpen(fname) ? '' : 'none'; } });
-            presets.filter(p => members.includes(p.value)).forEach(p => ct.appendChild(createItem(p, t, false, fname)));
+            presets.filter(p => members.includes(presetStorageKey(p))).forEach(p => ct.appendChild(createItem(p, t, false, fname)));
             fe.appendChild(hd); fe.appendChild(ct); foldersC.appendChild(fe);
         }
     }
@@ -768,11 +793,12 @@ function renderPresetList(searchQuery, root) {
     } else {
         if (allLabel) allLabel.textContent = '전체 프리셋';
         const inFolder = new Set(Object.values(getFolders()).flat());
-        presets.filter(p => !inFolder.has(p.value)).forEach(p => allC.appendChild(createItem(p, t, false, null)));
+        presets.filter(p => !inFolder.has(presetStorageKey(p))).forEach(p => allC.appendChild(createItem(p, t, false, null)));
     }
 }
 
 function createItem(preset, t, isFav, folder) {
+    const storageKey = presetStorageKey(preset);
     const item = document.createElement('div');
     item.className = 'chak-item' + (preset.selected ? ' chak-item--active' : '');
     const nm = document.createElement('span'); nm.className = 'chak-item-name';
@@ -780,10 +806,10 @@ function createItem(preset, t, isFav, folder) {
     const acts = document.createElement('span'); acts.className = 'chak-item-actions';
 
     const star = document.createElement('span');
-    star.className = 'chak-item-star' + (isFavorite(preset.value) ? ' chak-item-star--on' : '');
-    star.textContent = isFavorite(preset.value) ? '★' : '☆';
-    star.style.color = isFavorite(preset.value) ? '#f0c040' : t.text;
-    star.addEventListener('click', (e) => { e.stopPropagation(); toggleFavorite(preset.value); });
+    star.className = 'chak-item-star' + (isFavorite(storageKey) ? ' chak-item-star--on' : '');
+    star.textContent = isFavorite(storageKey) ? '★' : '☆';
+    star.style.color = isFavorite(storageKey) ? '#f0c040' : t.text;
+    star.addEventListener('click', (e) => { e.stopPropagation(); toggleFavorite(storageKey); });
     acts.appendChild(star);
 
     const otherFolders = Object.keys(getFolders()).filter(f => f !== folder);
@@ -792,14 +818,14 @@ function createItem(preset, t, isFav, folder) {
         fb.textContent = '📁'; fb.title = folder ? '다른 폴더로 이동' : '폴더에 추가';
         fb.addEventListener('click', (e) => {
             e.stopPropagation();
-            showFolderPicker(fb, preset.value, t, folder);
+            showFolderPicker(fb, storageKey, t, folder);
         });
         acts.appendChild(fb);
     }
     if (folder) {
         const rb = document.createElement('span'); rb.className = 'chak-item-folder-btn';
         rb.textContent = '✕'; rb.title = '폴더에서 제거';
-        rb.addEventListener('click', (e) => { e.stopPropagation(); removeFromFolder(folder, preset.value); renderPresetList(); });
+        rb.addEventListener('click', (e) => { e.stopPropagation(); removeFromFolder(folder, storageKey); renderPresetList(); });
         acts.appendChild(rb);
     }
 
